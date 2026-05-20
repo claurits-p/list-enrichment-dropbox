@@ -19,8 +19,15 @@ from config import (
 _MAX_ROWS = 50_000
 _MAX_ROW_ERRORS_SHOWN = 25
 _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
-_DOMAIN_RE = re.compile(
-    r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z0-9-]{1,63})+$"
+# Accept either a raw domain (acme.com, www.acme.co.uk) OR a full URL
+# (https://acme.com, http://www.acme.com/path). Anything with at least
+# one dot, no @, no whitespace, and a recognizable TLD-ish ending works.
+_DOMAIN_OR_URL_RE = re.compile(
+    r"^(?:https?://)?"           # optional scheme
+    r"(?:[A-Za-z0-9-]+\.)+"      # one or more "label." segments
+    r"[A-Za-z]{2,}"              # TLD (2+ letters)
+    r"(?:[:/?#].*)?$",           # optional port/path/query/fragment
+    re.IGNORECASE,
 )
 
 
@@ -168,8 +175,10 @@ def _looks_like_email(s: str) -> bool:
     return bool(_EMAIL_RE.match(s))
 
 
-def _looks_like_domain(s: str) -> bool:
-    return bool(_DOMAIN_RE.match(s)) and "@" not in s
+def _looks_like_domain_or_url(s: str) -> bool:
+    if "@" in s or " " in s:
+        return False
+    return bool(_DOMAIN_OR_URL_RE.match(s))
 
 
 def validate_rows(df: pd.DataFrame) -> list[str]:
@@ -211,10 +220,11 @@ def validate_rows(df: pd.DataFrame) -> list[str]:
 
         if email and not _looks_like_email(email):
             errors.append(f"Row {row_num}: Email `{email}` is not a valid email address.")
-        if domain and not _looks_like_domain(domain):
+        if domain and not _looks_like_domain_or_url(domain):
             errors.append(
                 f"Row {row_num}: Company Domain Name `{domain}` does not look like a "
-                "domain (e.g. `acme.com`, not `https://acme.com` or `john@acme.com`)."
+                "domain or website (e.g. `acme.com` or `https://acme.com`, "
+                "not `john@acme.com`)."
             )
 
         if len(errors) >= _MAX_ROW_ERRORS_SHOWN:
