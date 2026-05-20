@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from clay_client import get_webhook_url, send_rows_to_clay
 from config import APP_TITLE, OPTIONAL_HEADERS, REQUIRED_HEADERS
 from list_id_store import next_list_id, recent_submissions, record_submission
-from validator import normalize_columns, validate_rows
+from validator import validate_upload
 
 load_dotenv()
 
@@ -80,6 +80,28 @@ st.markdown(
         background: #f4f5f7;
         color: #4a5363;
         border: 1px solid #dde0e6;
+    }
+    /* Validation error block */
+    .csv-error {
+        padding: 16px 18px;
+        background: #fff1f1;
+        border-left: 4px solid #d6394d;
+        border-radius: 6px;
+        color: #5b1018;
+        margin: 12px 0 8px 0;
+    }
+    .csv-error h4 {
+        margin: 0 0 8px 0;
+        color: #8a1424;
+        font-size: 1.02rem;
+    }
+    .csv-error ul { margin: 4px 0 0 20px; padding: 0; }
+    .csv-error li { margin: 2px 0; }
+    .csv-error code {
+        background: #ffe3e3;
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-size: 0.88em;
     }
     </style>""",
     unsafe_allow_html=True,
@@ -168,6 +190,32 @@ def render_format_section():
         )
 
 
+def render_validation_errors(result) -> None:
+    def _li(items: list[str]) -> str:
+        return "".join(f"<li>{i}</li>" for i in items)
+
+    sections = []
+    if result.column_errors:
+        sections.append(
+            "<h4>Column issues</h4><ul>" + _li(result.column_errors) + "</ul>"
+        )
+    if result.row_errors:
+        sections.append(
+            "<h4>Row issues</h4><ul>" + _li(result.row_errors) + "</ul>"
+        )
+    body = "".join(sections) or "<p>Your file is not in the required format.</p>"
+
+    st.markdown(
+        f'<div class="csv-error">'
+        f"<h4>Your CSV is not in the required format</h4>"
+        f"<p>Fix the issues below and re-upload. Download the sample CSV "
+        f"in the section above if it helps.</p>"
+        f"{body}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_upload_section():
     st.subheader("Upload list")
     st.markdown(
@@ -210,30 +258,15 @@ def render_upload_section():
     if uploaded is None:
         return
 
-    try:
-        raw_df = pd.read_csv(uploaded)
-    except Exception as e:
-        st.error(f"Could not read CSV: {e}")
+    file_bytes = uploaded.getvalue()
+    result = validate_upload(file_bytes)
+
+    if not result.is_valid:
+        render_validation_errors(result)
         return
 
-    if raw_df.empty:
-        st.error("CSV has no data rows.")
-        return
-
-    df, col_errors = normalize_columns(raw_df)
-    if col_errors:
-        st.error("Column problems:")
-        for err in col_errors:
-            st.markdown(f"- {err}")
-        return
-
-    row_errors = validate_rows(df)
-    if row_errors:
-        st.error("Row problems:")
-        for err in row_errors:
-            st.markdown(f"- {err}")
-        return
-
+    df = result.df
+    assert df is not None
     st.success(f"Valid CSV — **{len(df)}** rows ready.")
     with st.expander("Preview (first 5 rows)"):
         st.dataframe(df.head(), use_container_width=True, hide_index=True)
