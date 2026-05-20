@@ -29,11 +29,16 @@ ALL_HEADERS = REQUIRED_HEADERS + NAME_HEADERS + OPTIONAL_HEADERS
 # Normalize common variations to canonical names
 HEADER_ALIASES = {
     "email": "Email",
+    "email address": "Email",
     "company domain": "Company Domain Name",
     "company domain name": "Company Domain Name",
     "domain": "Company Domain Name",
-    "company_domain": "Company Domain Name",
-    "company_domain_name": "Company Domain Name",
+    "domain name": "Company Domain Name",
+    "website": "Company Domain Name",
+    "company website": "Company Domain Name",
+    "company url": "Company Domain Name",
+    "url": "Company Domain Name",
+    "site": "Company Domain Name",
     "first name": "First Name",
     "first_name": "First Name",
     "firstname": "First Name",

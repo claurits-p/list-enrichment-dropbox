@@ -39,8 +39,9 @@ def main() -> None:
     pad = 20
     title_h = 36
     callout_h = 56
+    footnote_h_pad = 22
     w = sum(col_w) + pad * 2
-    h = title_h + callout_h + row_h * len(rows) + pad * 2
+    h = title_h + callout_h + row_h * len(rows) + pad * 2 + footnote_h_pad
 
     W, H = w * SCALE, h * SCALE
     img = Image.new("RGB", (W, H), "#0c1733")
@@ -98,6 +99,7 @@ def main() -> None:
     )
 
     y0 = (pad + title_h + callout_h) * SCALE
+    footnote_h = 18
     for ri, (c1, c2) in enumerate(rows):
         y = y0 + ri * row_h * SCALE
         if ri == 0:
@@ -131,6 +133,14 @@ def main() -> None:
             fill=text_color_right,
             font=header_font if ri == 0 else cell_font,
         )
+
+    footnote_y = y0 + len(rows) * row_h * SCALE + 8 * SCALE
+    draw.text(
+        (pad * SCALE, footnote_y),
+        "Tip: Company Domain Name accepts these headers: Domain, Website, Company Website, URL.",
+        fill="#9aa3b6",
+        font=cell_font,
+    )
 
     final = img.resize((w, h), Image.LANCZOS)
     OUT.parent.mkdir(parents=True, exist_ok=True)

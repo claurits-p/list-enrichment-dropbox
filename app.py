@@ -184,6 +184,10 @@ def render_format_section():
     chips_optional = "".join(f'<span class="chip chip-opt">{h}</span>' for h in OPTIONAL_HEADERS)
     st.markdown("**Required columns**", unsafe_allow_html=True)
     st.markdown(chips_required, unsafe_allow_html=True)
+    st.caption(
+        "`Company Domain Name` also accepts these headers: "
+        "**Domain**, **Website**, **Company Website**, **URL**."
+    )
     st.markdown(
         "**Name columns** — include either **Full Name** OR both "
         "**First Name** and **Last Name** per row",
