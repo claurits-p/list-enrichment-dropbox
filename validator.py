@@ -10,7 +10,6 @@ import pandas as pd
 
 from config import (
     ALL_HEADERS,
-    EXPECTED_HEADERS,
     HEADER_ALIASES,
     NAME_HEADERS,
     OPTIONAL_HEADERS,
@@ -121,13 +120,22 @@ def normalize_columns(df: pd.DataFrame) -> tuple[pd.DataFrame | None, Validation
         rename_map[col] = canonical
         seen_canonical.add(canonical)
 
-    missing = [h for h in EXPECTED_HEADERS if h not in seen_canonical]
+    missing = [h for h in REQUIRED_HEADERS if h not in seen_canonical]
     result.missing_required = missing
     result.unknown_columns = unknown
 
     if missing:
         result.column_errors.append(
             "Missing required column(s): " + ", ".join(f"`{h}`" for h in missing)
+        )
+
+    has_full_col = "Full Name" in seen_canonical
+    has_first_col = "First Name" in seen_canonical
+    has_last_col = "Last Name" in seen_canonical
+    if not has_full_col and not (has_first_col and has_last_col):
+        result.column_errors.append(
+            "Missing name column(s): include either a `Full Name` column "
+            "OR both `First Name` and `Last Name` columns."
         )
     if unknown:
         result.column_errors.append(
@@ -145,7 +153,7 @@ def normalize_columns(df: pd.DataFrame) -> tuple[pd.DataFrame | None, Validation
         return None, result
 
     out = df.rename(columns=rename_map)
-    for h in OPTIONAL_HEADERS:
+    for h in NAME_HEADERS + OPTIONAL_HEADERS:
         if h not in out.columns:
             out[h] = ""
     out = out[ALL_HEADERS].copy()
