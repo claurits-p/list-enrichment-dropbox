@@ -181,10 +181,26 @@ def _looks_like_domain_or_url(s: str) -> bool:
     return bool(_DOMAIN_OR_URL_RE.match(s))
 
 
-def validate_rows(df: pd.DataFrame) -> list[str]:
-    """Validate per-row and backfill Full Name from First+Last when possible.
+def _split_full_name(full: str) -> tuple[str, str]:
+    """Split 'First Middle Last' into (first, last).
 
-    Mutates df in place to fill Full Name when only First+Last are provided.
+    Heuristic: first word is first name, the rest joined is last name.
+    Returns ("", "") if not splittable.
+    """
+    parts = full.split()
+    if len(parts) == 0:
+        return "", ""
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], " ".join(parts[1:])
+
+
+def validate_rows(df: pd.DataFrame) -> list[str]:
+    """Validate per-row and backfill name fields when possible.
+
+    Mutates df in place:
+      - Builds Full Name from First+Last when only those are provided.
+      - Derives First Name / Last Name from Full Name when those are blank.
     """
     errors: list[str] = []
     truncated = False
@@ -208,6 +224,19 @@ def validate_rows(df: pd.DataFrame) -> list[str]:
                 + ", ".join(missing_fields)
             )
 
+        if full and (not first or not last):
+            split_first, split_last = _split_full_name(full)
+            if not first and split_first:
+                df.at[idx, "First Name"] = split_first
+                first = split_first
+            if not last and split_last:
+                df.at[idx, "Last Name"] = split_last
+                last = split_last
+
+        if not full and first and last:
+            df.at[idx, "Full Name"] = f"{first} {last}".strip()
+            full = f"{first} {last}".strip()
+
         has_full = bool(full)
         has_first_last = bool(first) and bool(last)
         if not has_full and not has_first_last:
@@ -215,8 +244,6 @@ def validate_rows(df: pd.DataFrame) -> list[str]:
                 f"Row {row_num}: provide either `Full Name` OR both "
                 "`First Name` and `Last Name`."
             )
-        elif not has_full and has_first_last:
-            df.at[idx, "Full Name"] = f"{first} {last}".strip()
 
         if email and not _looks_like_email(email):
             errors.append(f"Row {row_num}: Email `{email}` is not a valid email address.")
