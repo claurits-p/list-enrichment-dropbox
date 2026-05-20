@@ -229,7 +229,7 @@ def render_upload_section():
     with name_col:
         submitted_by = st.text_input(
             "Your name *",
-            placeholder="e.g. Chris Laurits",
+            placeholder="e.g. Steve Jobs",
             help="So we know who submitted this list.",
         ).strip()
     with list_col:
