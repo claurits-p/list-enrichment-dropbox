@@ -12,7 +12,8 @@ REQUIRED_HEADERS = [
 OPTIONAL_HEADERS = [
     "Event Related Name",
     "Outreach List Name",
-    "Contact or Company Owner",
+    "Contact Owner",
+    "Company Owner",
     "List Name",
     "Accounting ERP Software",
 ]
@@ -40,9 +41,10 @@ HEADER_ALIASES = {
     "event_related_name": "Event Related Name",
     "outreach list name": "Outreach List Name",
     "outreach_list_name": "Outreach List Name",
-    "contact or company owner": "Contact or Company Owner",
-    "contact_or_company_owner": "Contact or Company Owner",
-    "owner": "Contact or Company Owner",
+    "contact owner": "Contact Owner",
+    "contact_owner": "Contact Owner",
+    "company owner": "Company Owner",
+    "company_owner": "Company Owner",
     "list name": "List Name",
     "list_name": "List Name",
     "accounting erp software": "Accounting ERP Software",

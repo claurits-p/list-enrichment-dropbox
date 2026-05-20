@@ -111,11 +111,11 @@ def render_header():
 def render_notice():
     st.markdown(
         '<div class="notice">'
-        "<b>Heads up — before you upload:</b><br>"
+        "<b>Heads up before you upload:</b><br>"
         "Contacts you submit go through Clay enrichment and qualification. "
-        "<b>Not every contact will make it through</b> — some may be filtered out, "
+        "<b>Not every contact will make it through.</b> Some may be filtered out, "
         "deduped, or removed if they don't meet our criteria. "
-        "<b>Ownership won't always land with you</b> — existing contact or company owners "
+        "<b>Ownership won't always land with you.</b> Existing contact or company owners "
         "in HubSpot won't be overwritten, so some records will stay with their current owner. "
         "Thanks for understanding!"
         "</div>",
@@ -150,9 +150,7 @@ def render_format_section():
     )
 
     if FORMAT_IMAGE.exists():
-        img_col, _ = st.columns([0.6, 0.4])
-        with img_col:
-            st.image(str(FORMAT_IMAGE), use_container_width=True)
+        st.image(str(FORMAT_IMAGE), width=470)
 
     chips_required = "".join(f'<span class="chip">{h}</span>' for h in REQUIRED_HEADERS)
     chips_optional = "".join(f'<span class="chip chip-opt">{h}</span>' for h in OPTIONAL_HEADERS)
