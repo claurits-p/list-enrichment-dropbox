@@ -166,7 +166,22 @@ def render_upload_section():
             help="A short label for this list (shown in recent submissions).",
         ).strip()
 
-    uploaded = st.file_uploader("Drop your CSV here", type=["csv"])
+    missing_meta = []
+    if not submitted_by:
+        missing_meta.append("Your name")
+    if not submission_list_name:
+        missing_meta.append("List name")
+
+    if missing_meta:
+        st.info(
+            f"Fill in **{', '.join(missing_meta)}** before uploading a CSV."
+        )
+
+    uploaded = st.file_uploader(
+        "Drop your CSV here",
+        type=["csv"],
+        disabled=bool(missing_meta),
+    )
     if uploaded is None:
         return
 
@@ -198,19 +213,11 @@ def render_upload_section():
     with st.expander("Preview (first 5 rows)"):
         st.dataframe(df.head(), use_container_width=True, hide_index=True)
 
-    missing_meta = []
-    if not submitted_by:
-        missing_meta.append("Your name")
-    if not submission_list_name:
-        missing_meta.append("List name")
-    if missing_meta:
-        st.info(f"Fill in **{', '.join(missing_meta)}** above before sending.")
-
     webhook_set = bool(get_webhook_url())
     submit = st.button(
         "Send to Clay",
         type="primary",
-        disabled=not webhook_set or bool(missing_meta),
+        disabled=not webhook_set,
         use_container_width=True,
     )
 
