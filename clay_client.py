@@ -16,11 +16,21 @@ def get_auth_token() -> str | None:
     return os.getenv("CLAY_AUTH_TOKEN", "").strip() or None
 
 
-def row_to_payload(row: pd.Series, list_id: str, row_index: int, total_rows: int) -> dict[str, Any]:
+def row_to_payload(
+    row: pd.Series,
+    list_id: str,
+    row_index: int,
+    total_rows: int,
+    *,
+    submitted_by: str = "",
+    submission_list_name: str = "",
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "list_id": list_id,
         "row_index": row_index,
         "total_rows": total_rows,
+        "submitted_by": submitted_by,
+        "submission_list_name": submission_list_name,
     }
     for col, val in row.items():
         if pd.isna(val):
@@ -34,6 +44,8 @@ def send_rows_to_clay(
     df: pd.DataFrame,
     list_id: str,
     *,
+    submitted_by: str = "",
+    submission_list_name: str = "",
     batch_pause_sec: float = 0.05,
     timeout_sec: int = 30,
 ) -> tuple[int, list[str]]:
@@ -55,7 +67,14 @@ def send_rows_to_clay(
     success = 0
 
     for i, (_, row) in enumerate(df.iterrows(), start=1):
-        payload = row_to_payload(row, list_id, i, total)
+        payload = row_to_payload(
+            row,
+            list_id,
+            i,
+            total,
+            submitted_by=submitted_by,
+            submission_list_name=submission_list_name,
+        )
         try:
             resp = requests.post(url, json=payload, headers=headers, timeout=timeout_sec)
             if resp.status_code >= 400:

@@ -147,10 +147,24 @@ def render_upload_section():
     st.subheader("Upload list")
     st.markdown(
         '<div class="section-sub">'
-        "Drop your CSV below. We validate it, assign a list ID, and send each row to Clay."
+        "Tell us who you are and name the list, then drop the CSV."
         "</div>",
         unsafe_allow_html=True,
     )
+
+    name_col, list_col = st.columns(2)
+    with name_col:
+        submitted_by = st.text_input(
+            "Your name *",
+            placeholder="e.g. Chris Laurits",
+            help="So we know who submitted this list.",
+        ).strip()
+    with list_col:
+        submission_list_name = st.text_input(
+            "List name *",
+            placeholder="e.g. Q2 Partner Webinar Attendees",
+            help="A short label for this list (shown in recent submissions).",
+        ).strip()
 
     uploaded = st.file_uploader("Drop your CSV here", type=["csv"])
     if uploaded is None:
@@ -184,11 +198,19 @@ def render_upload_section():
     with st.expander("Preview (first 5 rows)"):
         st.dataframe(df.head(), use_container_width=True, hide_index=True)
 
+    missing_meta = []
+    if not submitted_by:
+        missing_meta.append("Your name")
+    if not submission_list_name:
+        missing_meta.append("List name")
+    if missing_meta:
+        st.info(f"Fill in **{', '.join(missing_meta)}** above before sending.")
+
     webhook_set = bool(get_webhook_url())
     submit = st.button(
         "Send to Clay",
         type="primary",
-        disabled=not webhook_set,
+        disabled=not webhook_set or bool(missing_meta),
         use_container_width=True,
     )
 
@@ -198,22 +220,39 @@ def render_upload_section():
     list_id = next_list_id()
     filename = uploaded.name
     with st.spinner(f"Sending list **{list_id}** ({len(df)} rows)…"):
-        sent, errors = send_rows_to_clay(df, list_id)
+        sent, errors = send_rows_to_clay(
+            df,
+            list_id,
+            submitted_by=submitted_by,
+            submission_list_name=submission_list_name,
+        )
 
     if sent == len(df):
-        record_submission(list_id, len(df), filename, "sent")
+        record_submission(
+            list_id, len(df), filename, "sent",
+            list_name=submission_list_name, submitted_by=submitted_by,
+        )
         st.success(
-            f"**List {list_id}** — all **{sent}** rows sent to Clay for enrichment."
+            f"**List {list_id} — “{submission_list_name}”** — all **{sent}** "
+            f"rows sent to Clay for enrichment."
         )
     elif sent > 0:
         msg = "; ".join(errors[:5])
-        record_submission(list_id, len(df), filename, "partial", msg)
+        record_submission(
+            list_id, len(df), filename, "partial",
+            list_name=submission_list_name, submitted_by=submitted_by,
+            error_message=msg,
+        )
         st.warning(f"**List {list_id}** — sent **{sent}/{len(df)}** rows. Some failed.")
         for err in errors:
             st.markdown(f"- {err}")
     else:
         msg = "; ".join(errors[:5])
-        record_submission(list_id, len(df), filename, "failed", msg)
+        record_submission(
+            list_id, len(df), filename, "failed",
+            list_name=submission_list_name, submitted_by=submitted_by,
+            error_message=msg,
+        )
         st.error(f"**List {list_id}** — nothing sent.")
         for err in errors:
             st.markdown(f"- {err}")
@@ -231,7 +270,42 @@ def render_history_section():
     if not recent:
         st.caption("No submissions yet.")
         return
-    st.dataframe(pd.DataFrame(recent), use_container_width=True, hide_index=True)
+
+    df = pd.DataFrame(recent)
+    df["created_at"] = pd.to_datetime(df["created_at"], utc=True, errors="coerce")
+    df["Submitted"] = df["created_at"].dt.tz_convert("US/Pacific").dt.strftime(
+        "%Y-%m-%d %I:%M %p"
+    )
+    display = df.rename(
+        columns={
+            "list_id": "List ID",
+            "list_name": "List name",
+            "submitted_by": "Submitted by",
+            "row_count": "Rows",
+            "status": "Status",
+        }
+    )[["List ID", "List name", "Submitted by", "Rows", "Status", "Submitted"]]
+
+    st.dataframe(display, use_container_width=True, hide_index=True)
+
+    errors_only = df[df["error_message"].notna() & (df["error_message"] != "")]
+    if not errors_only.empty:
+        with st.expander("Submissions with errors"):
+            st.dataframe(
+                errors_only[
+                    ["list_id", "list_name", "submitted_by", "status", "error_message"]
+                ].rename(
+                    columns={
+                        "list_id": "List ID",
+                        "list_name": "List name",
+                        "submitted_by": "Submitted by",
+                        "status": "Status",
+                        "error_message": "Error",
+                    }
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
 
 
 def main():

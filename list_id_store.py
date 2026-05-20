@@ -24,12 +24,21 @@ def _ensure_db():
                 list_id TEXT PRIMARY KEY,
                 row_count INTEGER NOT NULL,
                 filename TEXT,
+                list_name TEXT,
+                submitted_by TEXT,
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 error_message TEXT
             )
             """
         )
+        # lightweight migration for older DBs
+        existing_cols = {
+            row[1] for row in conn.execute("PRAGMA table_info(submissions)").fetchall()
+        }
+        for col in ("list_name", "submitted_by"):
+            if col not in existing_cols:
+                conn.execute(f"ALTER TABLE submissions ADD COLUMN {col} TEXT")
         conn.execute(
             "INSERT OR IGNORE INTO counter (id, last_list_id) VALUES (1, 0)"
         )
@@ -48,6 +57,8 @@ def record_submission(
     row_count: int,
     filename: str | None,
     status: str,
+    list_name: str | None = None,
+    submitted_by: str | None = None,
     error_message: str | None = None,
 ) -> None:
     _ensure_db()
@@ -55,13 +66,16 @@ def record_submission(
         conn.execute(
             """
             INSERT OR REPLACE INTO submissions
-            (list_id, row_count, filename, status, created_at, error_message)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (list_id, row_count, filename, list_name, submitted_by,
+             status, created_at, error_message)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 list_id,
                 row_count,
                 filename,
+                list_name,
+                submitted_by,
                 status,
                 datetime.now(timezone.utc).isoformat(),
                 error_message,
@@ -75,7 +89,8 @@ def recent_submissions(limit: int = 10) -> list[dict]:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             """
-            SELECT list_id, row_count, filename, status, created_at, error_message
+            SELECT list_id, list_name, submitted_by, row_count, status,
+                   created_at, filename, error_message
             FROM submissions
             ORDER BY created_at DESC
             LIMIT ?
