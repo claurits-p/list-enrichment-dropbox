@@ -83,6 +83,21 @@ def record_submission(
         )
 
 
+def clear_history(reset_counter: bool = True) -> int:
+    """Delete all submissions. Returns number of rows removed.
+
+    If reset_counter is True, the list_id counter also resets to 0
+    so the next submission becomes 000001 again.
+    """
+    _ensure_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        before = conn.execute("SELECT COUNT(*) FROM submissions").fetchone()[0]
+        conn.execute("DELETE FROM submissions")
+        if reset_counter:
+            conn.execute("UPDATE counter SET last_list_id = 0 WHERE id = 1")
+    return int(before)
+
+
 def recent_submissions(limit: int = 10) -> list[dict]:
     _ensure_db()
     with sqlite3.connect(DB_PATH) as conn:

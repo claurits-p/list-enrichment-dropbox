@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from clay_client import get_webhook_url, send_rows_to_clay
 from config import APP_TITLE, NAME_HEADERS, OPTIONAL_HEADERS, REQUIRED_HEADERS
-from list_id_store import next_list_id, recent_submissions, record_submission
+from list_id_store import clear_history, next_list_id, recent_submissions, record_submission
 from validator import validate_upload
 
 load_dotenv()
@@ -383,6 +383,22 @@ def render_history_section():
                 use_container_width=True,
                 hide_index=True,
             )
+
+    with st.expander("Admin: Clear submission history"):
+        st.caption(
+            "Wipes the submissions table and resets the list ID counter back "
+            "to 000001. Use during testing only — this can't be undone."
+        )
+        confirm = st.checkbox(
+            "I understand this deletes all submission history.",
+            key="confirm_clear",
+        )
+        if st.button("Clear all submissions", disabled=not confirm):
+            removed = clear_history(reset_counter=True)
+            st.success(
+                f"Cleared {removed} submission(s). Next list ID will be 000001."
+            )
+            st.rerun()
 
 
 def main():
