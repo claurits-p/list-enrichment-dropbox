@@ -350,9 +350,11 @@ def render_history_section():
 
     df = pd.DataFrame(recent)
     df["created_at"] = pd.to_datetime(df["created_at"], utc=True, errors="coerce")
-    df["Submitted"] = df["created_at"].dt.tz_convert("US/Pacific").dt.strftime(
-        "%Y-%m-%d %I:%M %p"
-    )
+    try:
+        local = df["created_at"].dt.tz_convert("US/Pacific")
+        df["Submitted"] = local.dt.strftime("%Y-%m-%d %I:%M %p") + " PT"
+    except Exception:
+        df["Submitted"] = df["created_at"].dt.strftime("%Y-%m-%d %H:%M") + " UTC"
     display = df.rename(
         columns={
             "list_id": "List ID",
