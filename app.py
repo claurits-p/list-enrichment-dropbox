@@ -530,10 +530,45 @@ def render_pending_approvals_panel() -> None:
             with cols[3]:
                 if st.button("Approve & send", key=f"approve_{qid}", type="primary"):
                     approve_pending(qid)
-                if st.button("Reject", key=f"reject_{qid}"):
-                    delete_pending_approval(qid)
-                    st.warning(f"Rejected queue #{qid}.")
+                if st.button("Decline", key=f"decline_open_{qid}"):
+                    st.session_state[f"confirm_decline_{qid}"] = True
                     st.rerun()
+
+            if st.session_state.get(f"confirm_decline_{qid}"):
+                st.markdown("")
+                st.warning(
+                    f"**Decline this list?**  "
+                    f"`{item['list_name']}` from {item['submitted_by']} "
+                    f"will be permanently deleted from the queue."
+                )
+                reason = st.text_input(
+                    "Reason (optional, shown nowhere yet but good record):",
+                    key=f"decline_reason_{qid}",
+                    placeholder="e.g. wrong format / out-of-ICP / duplicates",
+                )
+                d_cols = st.columns([1, 1, 4])
+                with d_cols[0]:
+                    if st.button(
+                        "Yes, decline",
+                        key=f"decline_confirm_{qid}",
+                        type="primary",
+                    ):
+                        delete_pending_approval(qid)
+                        msg = (
+                            f"Declined and deleted **{item['list_name']}** "
+                            f"(queue #{qid})."
+                        )
+                        if reason:
+                            msg += f" Reason: _{reason}_"
+                        st.session_state.pop(f"confirm_decline_{qid}", None)
+                        st.session_state.pop(f"decline_reason_{qid}", None)
+                        st.warning(msg)
+                        st.rerun()
+                with d_cols[1]:
+                    if st.button("Cancel", key=f"decline_cancel_{qid}"):
+                        st.session_state.pop(f"confirm_decline_{qid}", None)
+                        st.session_state.pop(f"decline_reason_{qid}", None)
+                        st.rerun()
 
 
 def approve_pending(queue_id: int) -> None:
