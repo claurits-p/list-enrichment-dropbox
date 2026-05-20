@@ -8,7 +8,7 @@ sys.path.insert(0, str(ROOT))
 
 from PIL import Image, ImageDraw, ImageFont
 
-from config import OPTIONAL_HEADERS, REQUIRED_HEADERS
+from config import NAME_HEADERS, OPTIONAL_HEADERS, REQUIRED_HEADERS
 
 OUT = ROOT / "assets" / "format_guide.png"
 
@@ -29,15 +29,17 @@ def main() -> None:
     rows = [("Column", "Required")]
     for h in REQUIRED_HEADERS:
         rows.append((h, "Yes"))
+    for h in NAME_HEADERS:
+        rows.append((h, "One required"))
     for h in OPTIONAL_HEADERS:
         rows.append((h, "No"))
 
-    col_w = [320, 110]
+    col_w = [320, 150]
     row_h = 30
     pad = 20
     title_h = 38
     w = sum(col_w) + pad * 2
-    h = title_h + row_h * len(rows) + pad * 2
+    h = title_h + row_h * len(rows) + pad * 2 + 24
 
     W, H = w * SCALE, h * SCALE
     img = Image.new("RGB", (W, H), "#0c1733")
@@ -80,6 +82,8 @@ def main() -> None:
             text_color_right = "#ffffff"
         elif c2 == "Yes":
             text_color_right = "#7fdbca"
+        elif c2 == "One required":
+            text_color_right = "#f5c66c"
         else:
             text_color_right = "#9aa3b6"
 
@@ -95,6 +99,14 @@ def main() -> None:
             fill=text_color_right,
             font=header_font if ri == 0 else cell_font,
         )
+
+    note_y = y0 + len(rows) * row_h * SCALE + 6 * SCALE
+    draw.text(
+        (pad * SCALE, note_y),
+        '"One required" = include either Full Name OR both First Name and Last Name.',
+        fill="#9aa3b6",
+        font=cell_font,
+    )
 
     final = img.resize((w, h), Image.LANCZOS)
     OUT.parent.mkdir(parents=True, exist_ok=True)

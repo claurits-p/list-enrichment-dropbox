@@ -8,7 +8,14 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from config import ALL_HEADERS, HEADER_ALIASES, OPTIONAL_HEADERS, REQUIRED_HEADERS
+from config import (
+    ALL_HEADERS,
+    EXPECTED_HEADERS,
+    HEADER_ALIASES,
+    NAME_HEADERS,
+    OPTIONAL_HEADERS,
+    REQUIRED_HEADERS,
+)
 
 _MAX_ROWS = 50_000
 _MAX_ROW_ERRORS_SHOWN = 25
@@ -114,7 +121,7 @@ def normalize_columns(df: pd.DataFrame) -> tuple[pd.DataFrame | None, Validation
         rename_map[col] = canonical
         seen_canonical.add(canonical)
 
-    missing = [h for h in REQUIRED_HEADERS if h not in seen_canonical]
+    missing = [h for h in EXPECTED_HEADERS if h not in seen_canonical]
     result.missing_required = missing
     result.unknown_columns = unknown
 
@@ -158,6 +165,10 @@ def _looks_like_domain(s: str) -> bool:
 
 
 def validate_rows(df: pd.DataFrame) -> list[str]:
+    """Validate per-row and backfill Full Name from First+Last when possible.
+
+    Mutates df in place to fill Full Name when only First+Last are provided.
+    """
     errors: list[str] = []
     truncated = False
 
@@ -174,17 +185,21 @@ def validate_rows(df: pd.DataFrame) -> list[str]:
             missing_fields.append("Email")
         if not domain:
             missing_fields.append("Company Domain Name")
-        if not first:
-            missing_fields.append("First Name")
-        if not last:
-            missing_fields.append("Last Name")
-        if not full:
-            missing_fields.append("Full Name")
         if missing_fields:
             errors.append(
                 f"Row {row_num}: missing required field(s): "
                 + ", ".join(missing_fields)
             )
+
+        has_full = bool(full)
+        has_first_last = bool(first) and bool(last)
+        if not has_full and not has_first_last:
+            errors.append(
+                f"Row {row_num}: provide either `Full Name` OR both "
+                "`First Name` and `Last Name`."
+            )
+        elif not has_full and has_first_last:
+            df.at[idx, "Full Name"] = f"{first} {last}".strip()
 
         if email and not _looks_like_email(email):
             errors.append(f"Row {row_num}: Email `{email}` is not a valid email address.")

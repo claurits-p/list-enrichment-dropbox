@@ -1,9 +1,14 @@
 """Column schema for List Enrichment Dropbox."""
 
-# Canonical CSV headers (exact spelling users should use)
+# Always required (per row)
 REQUIRED_HEADERS = [
     "Email",
     "Company Domain Name",
+]
+
+# Headers about the person's name. CSV must include all three columns,
+# but per row we only require: Full Name OR (First Name AND Last Name).
+NAME_HEADERS = [
     "First Name",
     "Last Name",
     "Full Name",
@@ -18,7 +23,9 @@ OPTIONAL_HEADERS = [
     "Accounting ERP Software",
 ]
 
-ALL_HEADERS = REQUIRED_HEADERS + OPTIONAL_HEADERS
+# Headers that MUST exist in the CSV (their values may be conditionally optional)
+EXPECTED_HEADERS = REQUIRED_HEADERS + NAME_HEADERS
+ALL_HEADERS = REQUIRED_HEADERS + NAME_HEADERS + OPTIONAL_HEADERS
 
 # Normalize common variations to canonical names
 HEADER_ALIASES = {

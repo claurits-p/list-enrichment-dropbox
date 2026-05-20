@@ -7,7 +7,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from clay_client import get_webhook_url, send_rows_to_clay
-from config import APP_TITLE, OPTIONAL_HEADERS, REQUIRED_HEADERS
+from config import APP_TITLE, NAME_HEADERS, OPTIONAL_HEADERS, REQUIRED_HEADERS
 from list_id_store import next_list_id, recent_submissions, record_submission
 from validator import validate_upload
 
@@ -80,6 +80,11 @@ st.markdown(
         background: #f4f5f7;
         color: #4a5363;
         border: 1px solid #dde0e6;
+    }
+    .chip-name {
+        background: #fff4dc;
+        color: #7a4c0b;
+        border: 1px solid #f4dca0;
     }
     /* Validation error block */
     .csv-error {
@@ -175,9 +180,16 @@ def render_format_section():
         st.image(str(FORMAT_IMAGE), width=470)
 
     chips_required = "".join(f'<span class="chip">{h}</span>' for h in REQUIRED_HEADERS)
+    chips_name = "".join(f'<span class="chip chip-name">{h}</span>' for h in NAME_HEADERS)
     chips_optional = "".join(f'<span class="chip chip-opt">{h}</span>' for h in OPTIONAL_HEADERS)
     st.markdown("**Required columns**", unsafe_allow_html=True)
     st.markdown(chips_required, unsafe_allow_html=True)
+    st.markdown(
+        "**Name columns** — include either **Full Name** OR both "
+        "**First Name** and **Last Name** per row",
+        unsafe_allow_html=True,
+    )
+    st.markdown(chips_name, unsafe_allow_html=True)
     st.markdown("**Optional columns**", unsafe_allow_html=True)
     st.markdown(chips_optional, unsafe_allow_html=True)
 
