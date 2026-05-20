@@ -26,20 +26,21 @@ def _font(path_candidates: list[str], size: int) -> ImageFont.ImageFont:
 
 
 def main() -> None:
-    rows = [("Column", "Required")]
+    rows: list[tuple[str, str]] = [("Column", "Required")]
     for h in REQUIRED_HEADERS:
         rows.append((h, "Yes"))
     for h in NAME_HEADERS:
-        rows.append((h, "One required"))
+        rows.append((h, "Name combo"))
     for h in OPTIONAL_HEADERS:
         rows.append((h, "No"))
 
     col_w = [320, 150]
     row_h = 30
     pad = 20
-    title_h = 38
+    title_h = 36
+    callout_h = 56
     w = sum(col_w) + pad * 2
-    h = title_h + row_h * len(rows) + pad * 2 + 24
+    h = title_h + callout_h + row_h * len(rows) + pad * 2
 
     W, H = w * SCALE, h * SCALE
     img = Image.new("RGB", (W, H), "#0c1733")
@@ -57,6 +58,14 @@ def main() -> None:
         ["/System/Library/Fonts/Helvetica.ttc", "/Library/Fonts/Arial.ttf"],
         12 * SCALE,
     )
+    callout_title_font = _font(
+        ["/System/Library/Fonts/Helvetica.ttc", "/Library/Fonts/Arial.ttf"],
+        12 * SCALE,
+    )
+    callout_body_font = _font(
+        ["/System/Library/Fonts/Helvetica.ttc", "/Library/Fonts/Arial.ttf"],
+        13 * SCALE,
+    )
 
     draw.text(
         (pad * SCALE, pad * SCALE),
@@ -65,7 +74,30 @@ def main() -> None:
         font=title_font,
     )
 
-    y0 = (pad + title_h) * SCALE
+    callout_x = pad * SCALE
+    callout_y = (pad + title_h) * SCALE
+    callout_x2 = (w - pad) * SCALE
+    callout_y2 = callout_y + (callout_h - 8) * SCALE
+    draw.rectangle(
+        [callout_x, callout_y, callout_x2, callout_y2],
+        fill="#3a2a08",
+        outline="#f0a83d",
+        width=2,
+    )
+    draw.text(
+        (callout_x + 12 * SCALE, callout_y + 8 * SCALE),
+        "NAME RULE",
+        fill="#f5c66c",
+        font=callout_title_font,
+    )
+    draw.text(
+        (callout_x + 12 * SCALE, callout_y + 24 * SCALE),
+        "Include Full Name  OR  both First Name + Last Name (per row).",
+        fill="#ffe7b8",
+        font=callout_body_font,
+    )
+
+    y0 = (pad + title_h + callout_h) * SCALE
     for ri, (c1, c2) in enumerate(rows):
         y = y0 + ri * row_h * SCALE
         if ri == 0:
@@ -82,7 +114,7 @@ def main() -> None:
             text_color_right = "#ffffff"
         elif c2 == "Yes":
             text_color_right = "#7fdbca"
-        elif c2 == "One required":
+        elif c2 == "Name combo":
             text_color_right = "#f5c66c"
         else:
             text_color_right = "#9aa3b6"
@@ -99,14 +131,6 @@ def main() -> None:
             fill=text_color_right,
             font=header_font if ri == 0 else cell_font,
         )
-
-    note_y = y0 + len(rows) * row_h * SCALE + 6 * SCALE
-    draw.text(
-        (pad * SCALE, note_y),
-        '"One required" = include either Full Name OR both First Name and Last Name.',
-        fill="#9aa3b6",
-        font=cell_font,
-    )
 
     final = img.resize((w, h), Image.LANCZOS)
     OUT.parent.mkdir(parents=True, exist_ok=True)
