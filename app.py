@@ -1,4 +1,4 @@
-import io
+"""List Enrichment Dropbox — Streamlit UI."""
 import os
 from pathlib import Path
 
@@ -7,118 +7,243 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from clay_client import get_webhook_url, send_rows_to_clay
-from config import ALL_HEADERS, APP_TITLE, OPTIONAL_HEADERS, REQUIRED_HEADERS
+from config import APP_TITLE, OPTIONAL_HEADERS, REQUIRED_HEADERS
 from list_id_store import next_list_id, recent_submissions, record_submission
 from validator import normalize_columns, validate_rows
 
 load_dotenv()
+
+st.set_page_config(
+    page_title=APP_TITLE,
+    page_icon="paystand_logo.png",
+    layout="wide",
+)
+
+st.markdown(
+    """<style>
+    /* Navy blue subheaders to match title */
+    h2, h3, [data-testid="stSubheader"] {
+        color: #001F5B !important;
+    }
+    /* Paystand blue primary button */
+    .stButton > button[kind="primary"],
+    .stButton > button[data-testid="baseButton-primary"] {
+        background-color: #003B91 !important;
+        border-color: #003B91 !important;
+    }
+    .stButton > button[kind="primary"]:hover,
+    .stButton > button[data-testid="baseButton-primary"]:hover {
+        background-color: #002D6F !important;
+        border-color: #002D6F !important;
+    }
+    /* Tighter section subtitle (gray) */
+    .section-sub {
+        color: #6c7280;
+        font-size: 0.92rem;
+        margin-top: -8px;
+        margin-bottom: 14px;
+    }
+    /* Status pill */
+    .status-pill {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+    .status-ok   { background:#e8fde8; color:#1B8A4E; border:1px solid #c5edc5; }
+    .status-warn { background:#fef3e8; color:#a85d1a; border:1px solid #f4d4ad; }
+    /* Required-field chip */
+    .chip {
+        display: inline-block;
+        padding: 3px 9px;
+        margin: 2px 4px 2px 0;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        background: #eaf0fb;
+        color: #003B91;
+        border: 1px solid #cdddf6;
+    }
+    .chip-opt {
+        background: #f4f5f7;
+        color: #4a5363;
+        border: 1px solid #dde0e6;
+    }
+    </style>""",
+    unsafe_allow_html=True,
+)
 
 ASSETS = Path(__file__).parent / "assets"
 FORMAT_IMAGE = ASSETS / "format_guide.png"
 SAMPLE_CSV = ASSETS / "sample_template.csv"
 
 
-st.set_page_config(page_title=APP_TITLE, page_icon="📋", layout="centered")
-
-st.title(APP_TITLE)
-st.caption("Upload a CSV in the required format. Rows are sent to Clay for enrichment.")
-
-# --- Format guide ---
-st.subheader("Required CSV format")
-if FORMAT_IMAGE.exists():
-    st.image(str(FORMAT_IMAGE), use_container_width=True)
-else:
-    st.info("Format image missing — see column list below.")
-
-req = ", ".join(f"**{h}**" for h in REQUIRED_HEADERS)
-opt = ", ".join(f"*{h}*" for h in OPTIONAL_HEADERS)
-st.markdown(f"**Required:** {req}")
-st.markdown(f"**Optional:** {opt}")
-
-if SAMPLE_CSV.exists():
-    st.download_button(
-        label="Download sample CSV",
-        data=SAMPLE_CSV.read_bytes(),
-        file_name="list_enrichment_template.csv",
-        mime="text/csv",
+def render_header():
+    logo_col, title_col = st.columns([0.06, 0.94], gap="small")
+    with logo_col:
+        st.image("paystand_logo.png", width=55)
+    with title_col:
+        st.markdown(
+            '<h1 style="color: #001F5B; margin-top: -5px;">'
+            f"{APP_TITLE}</h1>",
+            unsafe_allow_html=True,
+        )
+    st.markdown(
+        '<div class="section-sub">'
+        "Upload a CSV in the required format. Rows are sent to Clay for enrichment."
+        "</div>",
+        unsafe_allow_html=True,
     )
 
-st.divider()
 
-# --- Webhook status ---
-webhook_set = bool(get_webhook_url())
-if webhook_set:
-    st.success("Clay webhook configured.")
-else:
-    st.warning(
-        "Clay webhook not configured yet. Add `CLAY_WEBHOOK_URL` to `.env` before submitting."
+def render_webhook_status():
+    if get_webhook_url():
+        st.markdown(
+            '<span class="status-pill status-ok">Clay webhook configured</span>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<span class="status-pill status-warn">Clay webhook not configured</span>',
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "Add `CLAY_WEBHOOK_URL` to Streamlit Secrets (or `.env` locally) "
+            "before submissions can be sent."
+        )
+
+
+def render_format_section():
+    st.subheader("Required CSV format")
+    st.markdown(
+        '<div class="section-sub">'
+        "Headers must match exactly. Required fields cannot be blank."
+        "</div>",
+        unsafe_allow_html=True,
     )
 
-# --- Upload ---
-uploaded = st.file_uploader("Drop your CSV here", type=["csv"])
+    if FORMAT_IMAGE.exists():
+        img_col, _ = st.columns([0.6, 0.4])
+        with img_col:
+            st.image(str(FORMAT_IMAGE), use_container_width=True)
 
-if uploaded is not None:
+    chips_required = "".join(f'<span class="chip">{h}</span>' for h in REQUIRED_HEADERS)
+    chips_optional = "".join(f'<span class="chip chip-opt">{h}</span>' for h in OPTIONAL_HEADERS)
+    st.markdown("**Required columns**", unsafe_allow_html=True)
+    st.markdown(chips_required, unsafe_allow_html=True)
+    st.markdown("**Optional columns**", unsafe_allow_html=True)
+    st.markdown(chips_optional, unsafe_allow_html=True)
+
+    if SAMPLE_CSV.exists():
+        st.download_button(
+            label="Download sample CSV",
+            data=SAMPLE_CSV.read_bytes(),
+            file_name="list_enrichment_template.csv",
+            mime="text/csv",
+        )
+
+
+def render_upload_section():
+    st.subheader("Upload list")
+    st.markdown(
+        '<div class="section-sub">'
+        "Drop your CSV below. We validate it, assign a list ID, and send each row to Clay."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    uploaded = st.file_uploader("Drop your CSV here", type=["csv"])
+    if uploaded is None:
+        return
+
     try:
         raw_df = pd.read_csv(uploaded)
     except Exception as e:
         st.error(f"Could not read CSV: {e}")
-        st.stop()
+        return
 
     if raw_df.empty:
         st.error("CSV has no data rows.")
-        st.stop()
+        return
 
     df, col_errors = normalize_columns(raw_df)
     if col_errors:
         st.error("Column problems:")
         for err in col_errors:
             st.markdown(f"- {err}")
-        st.stop()
+        return
 
     row_errors = validate_rows(df)
     if row_errors:
         st.error("Row problems:")
         for err in row_errors:
             st.markdown(f"- {err}")
-        st.stop()
+        return
 
     st.success(f"Valid CSV — **{len(df)}** rows ready.")
     with st.expander("Preview (first 5 rows)"):
-        st.dataframe(df.head(), use_container_width=True)
+        st.dataframe(df.head(), use_container_width=True, hide_index=True)
 
-    submit = st.button("Send to Clay", type="primary", disabled=not webhook_set)
+    webhook_set = bool(get_webhook_url())
+    submit = st.button(
+        "Send to Clay",
+        type="primary",
+        disabled=not webhook_set,
+        use_container_width=True,
+    )
 
-    if submit:
-        list_id = next_list_id()
-        filename = uploaded.name
+    if not submit:
+        return
 
-        with st.spinner(f"Sending list **{list_id}** ({len(df)} rows)…"):
-            sent, errors = send_rows_to_clay(df, list_id)
+    list_id = next_list_id()
+    filename = uploaded.name
+    with st.spinner(f"Sending list **{list_id}** ({len(df)} rows)…"):
+        sent, errors = send_rows_to_clay(df, list_id)
 
-        if sent == len(df):
-            record_submission(list_id, len(df), filename, "sent")
-            st.success(
-                f"**List {list_id}** — all **{sent}** rows sent to Clay for enrichment."
-            )
-        elif sent > 0:
-            msg = "; ".join(errors[:5])
-            record_submission(list_id, len(df), filename, "partial", msg)
-            st.warning(
-                f"**List {list_id}** — sent **{sent}/{len(df)}** rows. Some failed."
-            )
-            for err in errors:
-                st.markdown(f"- {err}")
-        else:
-            msg = "; ".join(errors[:5])
-            record_submission(list_id, len(df), filename, "failed", msg)
-            st.error(f"**List {list_id}** — nothing sent.")
-            for err in errors:
-                st.markdown(f"- {err}")
+    if sent == len(df):
+        record_submission(list_id, len(df), filename, "sent")
+        st.success(
+            f"**List {list_id}** — all **{sent}** rows sent to Clay for enrichment."
+        )
+    elif sent > 0:
+        msg = "; ".join(errors[:5])
+        record_submission(list_id, len(df), filename, "partial", msg)
+        st.warning(f"**List {list_id}** — sent **{sent}/{len(df)}** rows. Some failed.")
+        for err in errors:
+            st.markdown(f"- {err}")
+    else:
+        msg = "; ".join(errors[:5])
+        record_submission(list_id, len(df), filename, "failed", msg)
+        st.error(f"**List {list_id}** — nothing sent.")
+        for err in errors:
+            st.markdown(f"- {err}")
 
-st.divider()
-st.subheader("Recent submissions")
-recent = recent_submissions()
-if not recent:
-    st.caption("No submissions yet.")
-else:
+
+def render_history_section():
+    st.subheader("Recent submissions")
+    st.markdown(
+        '<div class="section-sub">'
+        "Latest lists submitted from this app instance."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    recent = recent_submissions()
+    if not recent:
+        st.caption("No submissions yet.")
+        return
     st.dataframe(pd.DataFrame(recent), use_container_width=True, hide_index=True)
+
+
+def main():
+    render_header()
+    render_webhook_status()
+    st.divider()
+    render_format_section()
+    st.divider()
+    render_upload_section()
+    st.divider()
+    render_history_section()
+
+
+if __name__ == "__main__":
+    main()
