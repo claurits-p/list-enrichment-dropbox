@@ -15,7 +15,16 @@ from config import (
     OPTIONAL_HEADERS,
     REQUIRED_HEADERS,
 )
-from list_id_store import clear_history, next_list_id, recent_submissions, record_submission
+from list_id_store import (
+    add_to_approval_queue,
+    clear_history,
+    delete_pending_approval,
+    get_pending_approval,
+    list_pending_approvals,
+    next_list_id,
+    recent_submissions,
+    record_submission,
+)
 from validator import validate_upload
 
 load_dotenv()
@@ -217,53 +226,50 @@ def _file_hash(file_bytes: bytes) -> str:
     return hashlib.md5(file_bytes).hexdigest()[:10]
 
 
-def render_approval_gate(file_bytes: bytes, row_count: int) -> bool:
-    """Show admin approval UI for large lists. Returns True when approved."""
-    admin_password = os.getenv("ADMIN_PASSWORD", "").strip()
+def render_queue_submit(
+    file_bytes: bytes,
+    df,
+    submitted_by: str,
+    submission_list_name: str,
+    filename: str,
+) -> bool:
+    """Show large-list queue submit. Returns True when row was queued this run."""
+    row_count = len(df)
     fh = _file_hash(file_bytes)
-    key_approved = f"large_approved_{fh}"
+    queued_flag = f"queued_{fh}"
 
-    if st.session_state.get(key_approved):
+    if st.session_state.get(queued_flag):
+        queue_id = st.session_state.get(f"queued_id_{fh}")
         st.success(
-            f"Admin approved — sending **{row_count:,}** rows "
-            f"(over the {LARGE_LIST_THRESHOLD:,} threshold)."
+            f"Queued for approval (queue #{queue_id}). "
+            f"Reach out to **Kit** or **Marcelo** so they can approve it."
         )
         return True
 
     st.markdown(
         f'<div class="notice">'
-        f"<b>Large list — admin approval required</b><br>"
-        f"This list has <b>{row_count:,}</b> rows, which is over the "
-        f"<b>{LARGE_LIST_THRESHOLD:,}</b> threshold. An admin must approve "
-        f"before it can be sent to Clay."
+        f"<b>Large list — over the {LARGE_LIST_THRESHOLD:,} row limit</b><br>"
+        f"This list has <b>{row_count:,}</b> rows. Lists this big can't be sent "
+        f"straight to Clay — they go into an approval queue first.<br><br>"
+        f"<b>Reach out to Kit or Marcelo</b> to approve the list enrichment. "
+        f"They can log in, enter the admin password, and approve it from the "
+        f"<i>Pending approvals</i> section."
         f"</div>",
         unsafe_allow_html=True,
     )
 
-    if not admin_password:
-        st.error(
-            "Admin password is not configured on the server. Set "
-            "`ADMIN_PASSWORD` in Streamlit Secrets to allow approvals."
+    if st.button("Submit to approval queue", type="primary", use_container_width=True):
+        queue_id = add_to_approval_queue(
+            submitted_by=submitted_by,
+            list_name=submission_list_name,
+            row_count=row_count,
+            filename=filename,
+            csv_bytes=file_bytes,
         )
-        return False
+        st.session_state[queued_flag] = True
+        st.session_state[f"queued_id_{fh}"] = queue_id
+        st.rerun()
 
-    col_a, col_b = st.columns([2, 1])
-    with col_a:
-        pw = st.text_input(
-            "Admin password",
-            type="password",
-            key=f"approval_pw_{fh}",
-            placeholder="Have an admin enter the password",
-        )
-    with col_b:
-        st.write("")
-        st.write("")
-        if st.button("Approve list", key=f"approve_btn_{fh}", type="primary"):
-            if pw == admin_password:
-                st.session_state[key_approved] = True
-                st.rerun()
-            else:
-                st.error("Incorrect password.")
     return False
 
 
@@ -349,8 +355,10 @@ def render_upload_section():
         st.dataframe(df.head(), use_container_width=True, hide_index=True)
 
     if len(df) > LARGE_LIST_THRESHOLD:
-        if not render_approval_gate(file_bytes, len(df)):
-            return
+        render_queue_submit(
+            file_bytes, df, submitted_by, submission_list_name, uploaded.name
+        )
+        return
 
     webhook_set = bool(get_webhook_url())
     submit = st.button(
@@ -464,17 +472,24 @@ def render_admin_section() -> None:
     if not admin_password:
         return  # not configured -> hide admin entirely
 
-    with st.expander("Admin: Clear submission history"):
-        st.caption(
-            "Wipes the submissions table and resets the list ID counter back "
-            "to 000001. This can't be undone."
-        )
+    pending_count = len(list_pending_approvals())
+    expander_label = "Admin"
+    if pending_count > 0:
+        expander_label = f"Admin — {pending_count} pending approval(s)"
+
+    with st.expander(expander_label):
         if not st.session_state.get("admin_unlocked"):
+            st.caption(
+                "Admin can approve large list uploads in the approval queue and "
+                "clear submission history. Enter the admin password to unlock."
+            )
+            if pending_count:
+                st.info(f"There are **{pending_count}** list(s) waiting for approval.")
             pw = st.text_input(
                 "Admin password",
                 type="password",
                 key="admin_pw_input",
-                placeholder="Enter password to enable clear",
+                placeholder="Enter password to unlock admin",
             )
             if st.button("Unlock"):
                 if pw == admin_password:
@@ -485,23 +500,111 @@ def render_admin_section() -> None:
             return
 
         st.success("Admin unlocked for this session.")
-        confirm = st.checkbox(
-            "I understand this deletes all submission history.",
-            key="confirm_clear",
+        if st.button("Lock admin"):
+            st.session_state["admin_unlocked"] = False
+            st.rerun()
+
+        st.markdown("---")
+        render_pending_approvals_panel()
+
+        st.markdown("---")
+        render_clear_history_panel()
+
+
+def render_pending_approvals_panel() -> None:
+    st.markdown("#### Pending approvals")
+    pending = list_pending_approvals()
+    if not pending:
+        st.caption("No lists waiting for approval.")
+        return
+
+    for item in pending:
+        qid = item["queue_id"]
+        with st.container(border=True):
+            cols = st.columns([2, 2, 1, 2])
+            cols[0].markdown(f"**{item['list_name']}**")
+            cols[0].caption(f"by {item['submitted_by']}")
+            cols[1].markdown(f"`{item['filename']}`")
+            cols[1].caption(item["submitted_at"][:19].replace("T", " ") + " UTC")
+            cols[2].metric("Rows", f"{item['row_count']:,}")
+            with cols[3]:
+                if st.button("Approve & send", key=f"approve_{qid}", type="primary"):
+                    approve_pending(qid)
+                if st.button("Reject", key=f"reject_{qid}"):
+                    delete_pending_approval(qid)
+                    st.warning(f"Rejected queue #{qid}.")
+                    st.rerun()
+
+
+def approve_pending(queue_id: int) -> None:
+    item = get_pending_approval(queue_id)
+    if not item:
+        st.error("Queue item not found.")
+        return
+
+    result = validate_upload(item["csv_bytes"])
+    if not result.is_valid:
+        st.error("Stored CSV failed re-validation. Ask the submitter to re-upload.")
+        render_validation_errors(result)
+        return
+
+    df = result.df
+    assert df is not None
+    list_id = next_list_id()
+
+    with st.spinner(
+        f"Approving and sending **{item['list_name']}** "
+        f"({len(df):,} rows) as list {list_id}…"
+    ):
+        sent, errors = send_rows_to_clay(
+            df,
+            list_id,
+            submitted_by=item["submitted_by"],
+            submission_list_name=item["list_name"],
         )
-        col_a, col_b = st.columns([1, 1])
-        with col_a:
-            if st.button("Clear all submissions", disabled=not confirm, type="primary"):
-                removed = clear_history(reset_counter=True)
-                st.success(
-                    f"Cleared {removed} submission(s). Next list ID will be 000001."
-                )
-                st.session_state["admin_unlocked"] = False
-                st.rerun()
-        with col_b:
-            if st.button("Lock admin"):
-                st.session_state["admin_unlocked"] = False
-                st.rerun()
+
+    status = "sent" if sent == len(df) else ("partial" if sent > 0 else "failed")
+    record_submission(
+        list_id,
+        len(df),
+        item["filename"],
+        status,
+        list_name=item["list_name"],
+        submitted_by=item["submitted_by"],
+        error_message="; ".join(errors[:5]) if errors else None,
+    )
+    delete_pending_approval(queue_id)
+
+    if status == "sent":
+        st.success(
+            f"Approved and sent **{item['list_name']}** as list **{list_id}** "
+            f"({sent:,} rows)."
+        )
+    else:
+        st.warning(
+            f"List **{list_id}** — sent **{sent}/{len(df)}** rows. Some failed."
+        )
+        for err in errors:
+            st.markdown(f"- {err}")
+    st.rerun()
+
+
+def render_clear_history_panel() -> None:
+    st.markdown("#### Clear submission history")
+    st.caption(
+        "Wipes the submissions table and resets the list ID counter back "
+        "to 000001. This can't be undone."
+    )
+    confirm = st.checkbox(
+        "I understand this deletes all submission history.",
+        key="confirm_clear",
+    )
+    if st.button("Clear all submissions", disabled=not confirm, type="primary"):
+        removed = clear_history(reset_counter=True)
+        st.success(
+            f"Cleared {removed} submission(s). Next list ID will be 000001."
+        )
+        st.rerun()
 
 
 def main():

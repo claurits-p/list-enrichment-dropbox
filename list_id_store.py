@@ -40,6 +40,20 @@ def _ensure_db():
             if col not in existing_cols:
                 conn.execute(f"ALTER TABLE submissions ADD COLUMN {col} TEXT")
         conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pending_approvals (
+                queue_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                submitted_by TEXT NOT NULL,
+                list_name TEXT NOT NULL,
+                row_count INTEGER NOT NULL,
+                filename TEXT,
+                csv_bytes BLOB NOT NULL,
+                submitted_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending'
+            )
+            """
+        )
+        conn.execute(
             "INSERT OR IGNORE INTO counter (id, last_list_id) VALUES (1, 0)"
         )
 
@@ -80,6 +94,68 @@ def record_submission(
                 datetime.now(timezone.utc).isoformat(),
                 error_message,
             ),
+        )
+
+
+def add_to_approval_queue(
+    submitted_by: str,
+    list_name: str,
+    row_count: int,
+    filename: str | None,
+    csv_bytes: bytes,
+) -> int:
+    _ensure_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO pending_approvals
+            (submitted_by, list_name, row_count, filename, csv_bytes, submitted_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                submitted_by,
+                list_name,
+                row_count,
+                filename,
+                csv_bytes,
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        return int(cur.lastrowid or 0)
+
+
+def list_pending_approvals() -> list[dict]:
+    _ensure_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT queue_id, submitted_by, list_name, row_count, filename, submitted_at
+            FROM pending_approvals
+            WHERE status = 'pending'
+            ORDER BY submitted_at ASC
+            """
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_pending_approval(queue_id: int) -> dict | None:
+    _ensure_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM pending_approvals WHERE queue_id = ?",
+            (queue_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def delete_pending_approval(queue_id: int) -> None:
+    _ensure_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "DELETE FROM pending_approvals WHERE queue_id = ?",
+            (queue_id,),
         )
 
 
