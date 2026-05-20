@@ -53,6 +53,18 @@ st.markdown(
     }
     .status-ok   { background:#e8fde8; color:#1B8A4E; border:1px solid #c5edc5; }
     .status-warn { background:#fef3e8; color:#a85d1a; border:1px solid #f4d4ad; }
+    /* Notice banner */
+    .notice {
+        padding: 14px 18px;
+        background: #fff8e6;
+        border-left: 4px solid #f0a83d;
+        border-radius: 6px;
+        color: #7a4c0b;
+        font-size: 0.93rem;
+        margin: 6px 0 18px 0;
+        line-height: 1.5;
+    }
+    .notice b { color: #5a3a08; }
     /* Required-field chip */
     .chip {
         display: inline-block;
@@ -91,6 +103,21 @@ def render_header():
     st.markdown(
         '<div class="section-sub">'
         "Upload a CSV in the required format. Rows are sent to Clay for enrichment."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_notice():
+    st.markdown(
+        '<div class="notice">'
+        "<b>Heads up — before you upload:</b><br>"
+        "Contacts you submit go through Clay enrichment and qualification. "
+        "<b>Not every contact will make it through</b> — some may be filtered out, "
+        "deduped, or removed if they don't meet our criteria. "
+        "<b>Ownership won't always land with you</b> — existing contact or company owners "
+        "in HubSpot won't be overwritten, so some records will stay with their current owner. "
+        "Thanks for understanding!"
         "</div>",
         unsafe_allow_html=True,
     )
@@ -317,6 +344,7 @@ def render_history_section():
 
 def main():
     render_header()
+    render_notice()
     render_webhook_status()
     st.divider()
     render_format_section()
