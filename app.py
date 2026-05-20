@@ -386,21 +386,52 @@ def render_history_section():
                 hide_index=True,
             )
 
+    render_admin_section()
+
+
+def render_admin_section() -> None:
+    admin_password = os.getenv("ADMIN_PASSWORD", "").strip()
+    if not admin_password:
+        return  # not configured -> hide admin entirely
+
     with st.expander("Admin: Clear submission history"):
         st.caption(
             "Wipes the submissions table and resets the list ID counter back "
-            "to 000001. Use during testing only — this can't be undone."
+            "to 000001. This can't be undone."
         )
+        if not st.session_state.get("admin_unlocked"):
+            pw = st.text_input(
+                "Admin password",
+                type="password",
+                key="admin_pw_input",
+                placeholder="Enter password to enable clear",
+            )
+            if st.button("Unlock"):
+                if pw == admin_password:
+                    st.session_state["admin_unlocked"] = True
+                    st.rerun()
+                else:
+                    st.error("Incorrect password.")
+            return
+
+        st.success("Admin unlocked for this session.")
         confirm = st.checkbox(
             "I understand this deletes all submission history.",
             key="confirm_clear",
         )
-        if st.button("Clear all submissions", disabled=not confirm):
-            removed = clear_history(reset_counter=True)
-            st.success(
-                f"Cleared {removed} submission(s). Next list ID will be 000001."
-            )
-            st.rerun()
+        col_a, col_b = st.columns([1, 1])
+        with col_a:
+            if st.button("Clear all submissions", disabled=not confirm, type="primary"):
+                removed = clear_history(reset_counter=True)
+                st.success(
+                    f"Cleared {removed} submission(s). Next list ID will be 000001."
+                )
+                st.session_state["admin_unlocked"] = False
+                st.rerun()
+        with col_b:
+            if st.button("Lock admin"):
+                st.session_state["admin_unlocked"] = False
+                st.rerun()
 
 
 def main():
