@@ -415,6 +415,7 @@ def render_history_section():
     recent = recent_submissions()
     if not recent:
         st.caption("No submissions yet.")
+        render_admin_section()
         return
 
     df = pd.DataFrame(recent)
