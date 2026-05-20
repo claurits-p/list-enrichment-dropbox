@@ -64,3 +64,6 @@ HEADER_ALIASES = {
 APP_TITLE = "List Enrichment Dropbox"
 DATA_DIR = "data"
 DB_PATH = f"{DATA_DIR}/submissions.db"
+
+# Lists with more rows than this need admin approval before being sent to Clay.
+LARGE_LIST_THRESHOLD = 2500

@@ -1,4 +1,5 @@
 """List Enrichment Dropbox — Streamlit UI."""
+import hashlib
 import os
 from pathlib import Path
 
@@ -7,7 +8,13 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from clay_client import get_webhook_url, send_rows_to_clay
-from config import APP_TITLE, NAME_HEADERS, OPTIONAL_HEADERS, REQUIRED_HEADERS
+from config import (
+    APP_TITLE,
+    LARGE_LIST_THRESHOLD,
+    NAME_HEADERS,
+    OPTIONAL_HEADERS,
+    REQUIRED_HEADERS,
+)
 from list_id_store import clear_history, next_list_id, recent_submissions, record_submission
 from validator import validate_upload
 
@@ -206,6 +213,60 @@ def render_format_section():
         )
 
 
+def _file_hash(file_bytes: bytes) -> str:
+    return hashlib.md5(file_bytes).hexdigest()[:10]
+
+
+def render_approval_gate(file_bytes: bytes, row_count: int) -> bool:
+    """Show admin approval UI for large lists. Returns True when approved."""
+    admin_password = os.getenv("ADMIN_PASSWORD", "").strip()
+    fh = _file_hash(file_bytes)
+    key_approved = f"large_approved_{fh}"
+
+    if st.session_state.get(key_approved):
+        st.success(
+            f"Admin approved — sending **{row_count:,}** rows "
+            f"(over the {LARGE_LIST_THRESHOLD:,} threshold)."
+        )
+        return True
+
+    st.markdown(
+        f'<div class="notice">'
+        f"<b>Large list — admin approval required</b><br>"
+        f"This list has <b>{row_count:,}</b> rows, which is over the "
+        f"<b>{LARGE_LIST_THRESHOLD:,}</b> threshold. An admin must approve "
+        f"before it can be sent to Clay."
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    if not admin_password:
+        st.error(
+            "Admin password is not configured on the server. Set "
+            "`ADMIN_PASSWORD` in Streamlit Secrets to allow approvals."
+        )
+        return False
+
+    col_a, col_b = st.columns([2, 1])
+    with col_a:
+        pw = st.text_input(
+            "Admin password",
+            type="password",
+            key=f"approval_pw_{fh}",
+            placeholder="Have an admin enter the password",
+        )
+    with col_b:
+        st.write("")
+        st.write("")
+        if st.button("Approve list", key=f"approve_btn_{fh}", type="primary"):
+            if pw == admin_password:
+                st.session_state[key_approved] = True
+                st.rerun()
+            else:
+                st.error("Incorrect password.")
+    return False
+
+
 def render_validation_errors(result) -> None:
     def _li(items: list[str]) -> str:
         return "".join(f"<li>{i}</li>" for i in items)
@@ -286,6 +347,10 @@ def render_upload_section():
     st.success(f"Valid CSV — **{len(df)}** rows ready.")
     with st.expander("Preview (first 5 rows)"):
         st.dataframe(df.head(), use_container_width=True, hide_index=True)
+
+    if len(df) > LARGE_LIST_THRESHOLD:
+        if not render_approval_gate(file_bytes, len(df)):
+            return
 
     webhook_set = bool(get_webhook_url())
     submit = st.button(
