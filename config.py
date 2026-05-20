@@ -19,7 +19,6 @@ OPTIONAL_HEADERS = [
     "Outreach List Name",
     "Contact Owner",
     "Company Owner",
-    "List Name",
     "Accounting ERP Software",
 ]
 
@@ -52,8 +51,6 @@ HEADER_ALIASES = {
     "contact_owner": "Contact Owner",
     "company owner": "Company Owner",
     "company_owner": "Company Owner",
-    "list name": "List Name",
-    "list_name": "List Name",
     "accounting erp software": "Accounting ERP Software",
     "accounting_erp_software": "Accounting ERP Software",
     "erp": "Accounting ERP Software",
