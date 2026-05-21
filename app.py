@@ -198,7 +198,7 @@ def render_format_section():
     )
 
     if FORMAT_IMAGE.exists():
-        st.image(str(FORMAT_IMAGE), width=510)
+        st.image(str(FORMAT_IMAGE), width=540)
 
     chips_required = "".join(f'<span class="chip">{h}</span>' for h in REQUIRED_HEADERS)
     chips_name = "".join(f'<span class="chip chip-name">{h}</span>' for h in NAME_HEADERS)
