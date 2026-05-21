@@ -13,6 +13,7 @@ from config import (
     LARGE_LIST_THRESHOLD,
     NAME_HEADERS,
     OPTIONAL_HEADERS,
+    RECORD_TYPES,
     REQUIRED_HEADERS,
 )
 from list_id_store import (
@@ -231,6 +232,7 @@ def render_queue_submit(
     df,
     submitted_by: str,
     submission_list_name: str,
+    record_type: str,
     filename: str,
 ) -> bool:
     """Show large-list queue submit. Returns True when row was queued this run."""
@@ -265,6 +267,7 @@ def render_queue_submit(
             row_count=row_count,
             filename=filename,
             csv_bytes=file_bytes,
+            record_type=record_type,
         )
         st.session_state[queued_flag] = True
         st.session_state[f"queued_id_{fh}"] = queue_id
@@ -308,7 +311,7 @@ def render_upload_section():
         unsafe_allow_html=True,
     )
 
-    name_col, list_col = st.columns(2)
+    name_col, list_col, type_col = st.columns([1, 1, 1])
     with name_col:
         submitted_by = st.text_input(
             "Your name *",
@@ -321,12 +324,21 @@ def render_upload_section():
             placeholder="e.g. Q2 Partner Webinar Attendees",
             help="A short label for this list (shown in recent submissions).",
         ).strip()
+    with type_col:
+        record_type = st.selectbox(
+            "Record type *",
+            options=("",) + RECORD_TYPES,
+            format_func=lambda x: x or "— Select record type —",
+            help="What kind of records are in this list?",
+        )
 
     missing_meta = []
     if not submitted_by:
         missing_meta.append("Your name")
     if not submission_list_name:
         missing_meta.append("List name")
+    if not record_type:
+        missing_meta.append("Record type")
 
     if missing_meta:
         st.info(
@@ -356,7 +368,12 @@ def render_upload_section():
 
     if len(df) > LARGE_LIST_THRESHOLD:
         render_queue_submit(
-            file_bytes, df, submitted_by, submission_list_name, uploaded.name
+            file_bytes,
+            df,
+            submitted_by,
+            submission_list_name,
+            record_type,
+            uploaded.name,
         )
         return
 
@@ -379,22 +396,25 @@ def render_upload_section():
             list_id,
             submitted_by=submitted_by,
             submission_list_name=submission_list_name,
+            record_type=record_type,
         )
 
     if sent == len(df):
         record_submission(
             list_id, len(df), filename, "sent",
             list_name=submission_list_name, submitted_by=submitted_by,
+            record_type=record_type,
         )
         st.success(
-            f"**List {list_id} — “{submission_list_name}”** — all **{sent}** "
-            f"rows sent to Clay for enrichment."
+            f"**List {list_id} — “{submission_list_name}” ({record_type})** — "
+            f"all **{sent}** rows sent to Clay for enrichment."
         )
     elif sent > 0:
         msg = "; ".join(errors[:5])
         record_submission(
             list_id, len(df), filename, "partial",
             list_name=submission_list_name, submitted_by=submitted_by,
+            record_type=record_type,
             error_message=msg,
         )
         st.warning(f"**List {list_id}** — sent **{sent}/{len(df)}** rows. Some failed.")
@@ -405,6 +425,7 @@ def render_upload_section():
         record_submission(
             list_id, len(df), filename, "failed",
             list_name=submission_list_name, submitted_by=submitted_by,
+            record_type=record_type,
             error_message=msg,
         )
         st.error(f"**List {list_id}** — nothing sent.")
@@ -438,10 +459,14 @@ def render_history_section():
             "list_id": "List ID",
             "list_name": "List name",
             "submitted_by": "Submitted by",
+            "record_type": "Record type",
             "row_count": "Rows",
             "status": "Status",
         }
-    )[["List ID", "List name", "Submitted by", "Rows", "Status", "Submitted"]]
+    )[
+        ["List ID", "List name", "Record type", "Submitted by", "Rows",
+         "Status", "Submitted"]
+    ]
 
     st.dataframe(display, use_container_width=True, hide_index=True)
 
@@ -523,7 +548,9 @@ def render_pending_approvals_panel() -> None:
         with st.container(border=True):
             cols = st.columns([2, 2, 1, 2])
             cols[0].markdown(f"**{item['list_name']}**")
-            cols[0].caption(f"by {item['submitted_by']}")
+            cols[0].caption(
+                f"by {item['submitted_by']} · {item.get('record_type') or '—'}"
+            )
             cols[1].markdown(f"`{item['filename']}`")
             cols[1].caption(item["submitted_at"][:19].replace("T", " ") + " UTC")
             cols[2].metric("Rows", f"{item['row_count']:,}")
@@ -586,6 +613,7 @@ def approve_pending(queue_id: int) -> None:
     df = result.df
     assert df is not None
     list_id = next_list_id()
+    record_type = item.get("record_type") or ""
 
     with st.spinner(
         f"Approving and sending **{item['list_name']}** "
@@ -596,6 +624,7 @@ def approve_pending(queue_id: int) -> None:
             list_id,
             submitted_by=item["submitted_by"],
             submission_list_name=item["list_name"],
+            record_type=record_type,
         )
 
     status = "sent" if sent == len(df) else ("partial" if sent > 0 else "failed")
@@ -606,6 +635,7 @@ def approve_pending(queue_id: int) -> None:
         status,
         list_name=item["list_name"],
         submitted_by=item["submitted_by"],
+        record_type=record_type,
         error_message="; ".join(errors[:5]) if errors else None,
     )
     delete_pending_approval(queue_id)

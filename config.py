@@ -67,3 +67,6 @@ DB_PATH = f"{DATA_DIR}/submissions.db"
 
 # Lists with more rows than this need admin approval before being sent to Clay.
 LARGE_LIST_THRESHOLD = 1000
+
+# Allowed Record Type values selected on the upload form
+RECORD_TYPES = ("Prospect", "Partner", "Competitor")
