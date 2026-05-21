@@ -159,7 +159,10 @@ def render_notice():
         "<b>Not every contact will make it through.</b> Some may be filtered out, "
         "deduped, or removed if they don't meet our criteria. "
         "<b>Ownership won't always land with you.</b> Existing contact or company owners "
-        "in HubSpot won't be overwritten, so some records will stay with their current owner. "
+        "in HubSpot won't be overwritten, so some records will stay with their current owner.<br>"
+        f"<b>Lists over {LARGE_LIST_THRESHOLD:,} rows need admin approval.</b> "
+        "If your list is bigger, it goes into the approval queue and Kit or "
+        "Marcelo will release it for enrichment. "
         "Thanks for understanding!"
         "</div>",
         unsafe_allow_html=True,
