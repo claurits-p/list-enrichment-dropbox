@@ -134,19 +134,21 @@ SAMPLE_CSV = ASSETS / "sample_template.csv"
 
 
 def render_header():
-    logo_col, title_col = st.columns([0.06, 0.94], gap="small")
-    with logo_col:
-        st.image("paystand_logo.png", width=55)
-    with title_col:
-        st.markdown(
-            '<h1 style="color: #001F5B; margin-top: -5px;">'
-            f"{APP_TITLE}</h1>",
-            unsafe_allow_html=True,
-        )
+    import base64
+    logo_path = Path(__file__).parent / "paystand_logo.png"
+    logo_b64 = base64.b64encode(logo_path.read_bytes()).decode() if logo_path.exists() else ""
     st.markdown(
-        '<div class="section-sub">'
-        "Upload a CSV in the required format. Rows are sent to Clay for enrichment."
-        "</div>",
+        f"""
+        <div style="display:flex; align-items:center; gap:14px; margin: 0 0 4px 0;">
+            <img src="data:image/png;base64,{logo_b64}" width="48" height="48"
+                 style="display:block;" />
+            <h1 style="color:#001F5B; margin:0; padding:0; line-height:1.1;
+                       font-size:2.4rem; font-weight:700;">{APP_TITLE}</h1>
+        </div>
+        <div class="section-sub" style="margin-top:0;">
+            Upload a CSV in the required format. Rows are sent to Clay for enrichment.
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
