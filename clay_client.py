@@ -24,7 +24,6 @@ def row_to_payload(
     *,
     submitted_by: str = "",
     submission_list_name: str = "",
-    record_type: str = "",
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "list_id": list_id,
@@ -32,7 +31,6 @@ def row_to_payload(
         "total_rows": total_rows,
         "submitted_by": submitted_by,
         "submission_list_name": submission_list_name,
-        "record_type": record_type,
     }
     for col, val in row.items():
         if pd.isna(val):
@@ -48,7 +46,6 @@ def send_rows_to_clay(
     *,
     submitted_by: str = "",
     submission_list_name: str = "",
-    record_type: str = "",
     batch_pause_sec: float = 0.05,
     timeout_sec: int = 30,
 ) -> tuple[int, list[str]]:
@@ -77,7 +74,6 @@ def send_rows_to_clay(
             total,
             submitted_by=submitted_by,
             submission_list_name=submission_list_name,
-            record_type=record_type,
         )
         try:
             resp = requests.post(url, json=payload, headers=headers, timeout=timeout_sec)

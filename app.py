@@ -13,7 +13,6 @@ from config import (
     LARGE_LIST_THRESHOLD,
     NAME_HEADERS,
     OPTIONAL_HEADERS,
-    RECORD_TYPES,
     REQUIRED_HEADERS,
 )
 from list_id_store import (
@@ -227,12 +226,22 @@ def _file_hash(file_bytes: bytes) -> str:
     return hashlib.md5(file_bytes).hexdigest()[:10]
 
 
+def summarize_record_types(df) -> str:
+    """Build a compact 'Prospect: 45, Partner: 10' summary from a validated df."""
+    if "Record Type" not in df.columns:
+        return ""
+    counts = df["Record Type"].value_counts().to_dict()
+    if not counts:
+        return ""
+    parts = [f"{rt}: {n}" for rt, n in counts.items()]
+    return ", ".join(parts)
+
+
 def render_queue_submit(
     file_bytes: bytes,
     df,
     submitted_by: str,
     submission_list_name: str,
-    record_type: str,
     filename: str,
 ) -> bool:
     """Show large-list queue submit. Returns True when row was queued this run."""
@@ -267,7 +276,7 @@ def render_queue_submit(
             row_count=row_count,
             filename=filename,
             csv_bytes=file_bytes,
-            record_type=record_type,
+            record_type=summarize_record_types(df),
         )
         st.session_state[queued_flag] = True
         st.session_state[f"queued_id_{fh}"] = queue_id
@@ -311,7 +320,7 @@ def render_upload_section():
         unsafe_allow_html=True,
     )
 
-    name_col, list_col, type_col = st.columns([1, 1, 1])
+    name_col, list_col = st.columns(2)
     with name_col:
         submitted_by = st.text_input(
             "Your name *",
@@ -324,21 +333,12 @@ def render_upload_section():
             placeholder="e.g. Q2 Partner Webinar Attendees",
             help="A short label for this list (shown in recent submissions).",
         ).strip()
-    with type_col:
-        record_type = st.selectbox(
-            "Record type *",
-            options=("",) + RECORD_TYPES,
-            format_func=lambda x: x or "— Select record type —",
-            help="What kind of records are in this list?",
-        )
 
     missing_meta = []
     if not submitted_by:
         missing_meta.append("Your name")
     if not submission_list_name:
         missing_meta.append("List name")
-    if not record_type:
-        missing_meta.append("Record type")
 
     if missing_meta:
         st.info(
@@ -372,7 +372,6 @@ def render_upload_section():
             df,
             submitted_by,
             submission_list_name,
-            record_type,
             uploaded.name,
         )
         return
@@ -390,31 +389,31 @@ def render_upload_section():
 
     list_id = next_list_id()
     filename = uploaded.name
+    record_type_summary = summarize_record_types(df)
     with st.spinner(f"Sending list **{list_id}** ({len(df)} rows)…"):
         sent, errors = send_rows_to_clay(
             df,
             list_id,
             submitted_by=submitted_by,
             submission_list_name=submission_list_name,
-            record_type=record_type,
         )
 
     if sent == len(df):
         record_submission(
             list_id, len(df), filename, "sent",
             list_name=submission_list_name, submitted_by=submitted_by,
-            record_type=record_type,
+            record_type=record_type_summary,
         )
         st.success(
-            f"**List {list_id} — “{submission_list_name}” ({record_type})** — "
-            f"all **{sent}** rows sent to Clay for enrichment."
+            f"**List {list_id} — “{submission_list_name}”** — all **{sent}** "
+            f"rows sent to Clay for enrichment ({record_type_summary})."
         )
     elif sent > 0:
         msg = "; ".join(errors[:5])
         record_submission(
             list_id, len(df), filename, "partial",
             list_name=submission_list_name, submitted_by=submitted_by,
-            record_type=record_type,
+            record_type=record_type_summary,
             error_message=msg,
         )
         st.warning(f"**List {list_id}** — sent **{sent}/{len(df)}** rows. Some failed.")
@@ -425,7 +424,7 @@ def render_upload_section():
         record_submission(
             list_id, len(df), filename, "failed",
             list_name=submission_list_name, submitted_by=submitted_by,
-            record_type=record_type,
+            record_type=record_type_summary,
             error_message=msg,
         )
         st.error(f"**List {list_id}** — nothing sent.")
@@ -613,7 +612,7 @@ def approve_pending(queue_id: int) -> None:
     df = result.df
     assert df is not None
     list_id = next_list_id()
-    record_type = item.get("record_type") or ""
+    record_type_summary = summarize_record_types(df) or (item.get("record_type") or "")
 
     with st.spinner(
         f"Approving and sending **{item['list_name']}** "
@@ -624,7 +623,6 @@ def approve_pending(queue_id: int) -> None:
             list_id,
             submitted_by=item["submitted_by"],
             submission_list_name=item["list_name"],
-            record_type=record_type,
         )
 
     status = "sent" if sent == len(df) else ("partial" if sent > 0 else "failed")
@@ -635,7 +633,7 @@ def approve_pending(queue_id: int) -> None:
         status,
         list_name=item["list_name"],
         submitted_by=item["submitted_by"],
-        record_type=record_type,
+        record_type=record_type_summary,
         error_message="; ".join(errors[:5]) if errors else None,
     )
     delete_pending_approval(queue_id)

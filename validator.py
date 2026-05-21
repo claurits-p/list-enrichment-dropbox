@@ -13,6 +13,7 @@ from config import (
     HEADER_ALIASES,
     NAME_HEADERS,
     OPTIONAL_HEADERS,
+    RECORD_TYPES,
     REQUIRED_HEADERS,
 )
 
@@ -201,14 +202,18 @@ def validate_rows(df: pd.DataFrame) -> list[str]:
     Mutates df in place:
       - Builds Full Name from First+Last when only those are provided.
       - Derives First Name / Last Name from Full Name when those are blank.
+      - Normalizes Record Type to canonical case (Prospect/Partner/Competitor).
     """
     errors: list[str] = []
     truncated = False
+    record_type_lookup = {rt.lower(): rt for rt in RECORD_TYPES}
+    allowed_list = ", ".join(f"`{rt}`" for rt in RECORD_TYPES)
 
     for idx, row in df.iterrows():
         row_num = int(idx) + 2  # +1 for 1-indexed, +1 for header row
         email = row["Email"]
         domain = row["Company Domain Name"]
+        record_type = row["Record Type"]
         first = row["First Name"]
         last = row["Last Name"]
         full = row["Full Name"]
@@ -218,11 +223,23 @@ def validate_rows(df: pd.DataFrame) -> list[str]:
             missing_fields.append("Email")
         if not domain:
             missing_fields.append("Company Domain Name")
+        if not record_type:
+            missing_fields.append("Record Type")
         if missing_fields:
             errors.append(
                 f"Row {row_num}: missing required field(s): "
                 + ", ".join(missing_fields)
             )
+
+        if record_type:
+            canonical = record_type_lookup.get(record_type.strip().lower())
+            if canonical is None:
+                errors.append(
+                    f"Row {row_num}: Record Type `{record_type}` is not allowed. "
+                    f"Must be one of {allowed_list}."
+                )
+            else:
+                df.at[idx, "Record Type"] = canonical
 
         if full and (not first or not last):
             split_first, split_last = _split_full_name(full)

@@ -26,6 +26,7 @@ def _font(path_candidates: list[str], size: int) -> ImageFont.ImageFont:
 
 
 def main() -> None:
+    from config import RECORD_TYPES
     rows: list[tuple[str, str]] = [("Column", "Required")]
     for h in REQUIRED_HEADERS:
         rows.append((h, "Yes"))
@@ -33,13 +34,14 @@ def main() -> None:
         rows.append((h, "Name combo"))
     for h in OPTIONAL_HEADERS:
         rows.append((h, "No"))
+    record_type_values = " | ".join(RECORD_TYPES)
 
     col_w = [320, 150]
     row_h = 30
     pad = 20
     title_h = 36
     callout_h = 56
-    footnote_h_pad = 22
+    footnote_h_pad = 44
     w = sum(col_w) + pad * 2
     h = title_h + callout_h + row_h * len(rows) + pad * 2 + footnote_h_pad
 
@@ -138,6 +140,12 @@ def main() -> None:
     draw.text(
         (pad * SCALE, footnote_y),
         "Tip: Company Domain Name accepts these headers: Domain, Website, Company Website, URL.",
+        fill="#9aa3b6",
+        font=cell_font,
+    )
+    draw.text(
+        (pad * SCALE, footnote_y + 18 * SCALE),
+        f"Record Type values (per row): {record_type_values}",
         fill="#9aa3b6",
         font=cell_font,
     )

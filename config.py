@@ -4,6 +4,7 @@
 REQUIRED_HEADERS = [
     "Email",
     "Company Domain Name",
+    "Record Type",
 ]
 
 # Headers about the person's name. CSV must include all three columns,
@@ -59,6 +60,10 @@ HEADER_ALIASES = {
     "accounting erp software": "Accounting ERP Software",
     "accounting_erp_software": "Accounting ERP Software",
     "erp": "Accounting ERP Software",
+    "record type": "Record Type",
+    "record_type": "Record Type",
+    "type": "Record Type",
+    "contact type": "Record Type",
 }
 
 APP_TITLE = "List Enrichment Dropbox"

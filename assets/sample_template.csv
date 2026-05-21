@@ -1,4 +1,4 @@
-Email,Company Domain Name,First Name,Last Name,Full Name,Event Related Name,Outreach List Name,Contact Owner,Company Owner,Accounting ERP Software
-jane.doe@example.com,example.com,Jane,Doe,Jane Doe,Q2 Webinar,SDR Outbound Q2,,,NetSuite
-john.smith@acme.io,acme.io,,,John Smith,,,,,
-maria.garcia@beta.co,beta.co,Maria,Garcia,,,,,,Sage Intacct
+Email,Company Domain Name,Record Type,First Name,Last Name,Full Name,Event Related Name,Outreach List Name,Contact Owner,Company Owner,Accounting ERP Software
+jane.doe@example.com,example.com,Prospect,Jane,Doe,Jane Doe,Q2 Webinar,SDR Outbound Q2,,,NetSuite
+john.smith@acme.io,acme.io,Partner,,,John Smith,,,,,
+maria.garcia@beta.co,beta.co,Competitor,Maria,Garcia,,,,,,Sage Intacct

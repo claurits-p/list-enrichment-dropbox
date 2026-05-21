@@ -76,10 +76,12 @@ def main(n: int = 300) -> None:
         "Last Name",
         "Website",
         "Email Address",
+        "Record Type",
         "Event Related Name",
         "Outreach List Name",
         "Accounting ERP Software",
     ]
+    record_types = ["Prospect", "Prospect", "Prospect", "Partner", "Competitor"]
     erp_options = [
         "", "", "", "", "", "NetSuite", "QuickBooks", "Sage Intacct",
         "Microsoft Dynamics", "Acumatica", "SAP", "Xero",
@@ -112,6 +114,7 @@ def main(n: int = 300) -> None:
                 last,
                 website,
                 email,
+                random.choice(record_types),
                 random.choice(events),
                 random.choice(outreach),
                 random.choice(erp_options),
