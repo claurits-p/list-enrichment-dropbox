@@ -124,6 +124,27 @@ st.markdown(
         border-radius: 4px;
         font-size: 0.88em;
     }
+    /* Post-submission info block */
+    .next-steps {
+        padding: 16px 18px;
+        background: #eaf3ff;
+        border-left: 4px solid #1B6AC9;
+        border-radius: 6px;
+        color: #0a3573;
+        margin: 12px 0 4px 0;
+        line-height: 1.55;
+        font-size: 0.95rem;
+    }
+    .next-steps b { color: #082858; }
+    .next-steps .eyebrow {
+        display: block;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: #1B6AC9;
+        margin-bottom: 6px;
+    }
     </style>""",
     unsafe_allow_html=True,
 )
@@ -231,6 +252,30 @@ def _file_hash(file_bytes: bytes) -> str:
     return hashlib.md5(file_bytes).hexdigest()[:10]
 
 
+def render_next_steps(list_name: str, identifier: str, *, queued: bool) -> None:
+    if queued:
+        first_line = (
+            f"Your list <b>“{list_name}”</b> ({identifier}) is in the approval queue. "
+            "Once <b>Kit</b> or <b>Marcelo</b> approves it, enrichment in Clay will start."
+        )
+    else:
+        first_line = (
+            f"Your list <b>“{list_name}”</b> ({identifier}) is now being enriched in Clay."
+        )
+
+    st.markdown(
+        f'<div class="next-steps">'
+        f'<span class="eyebrow">What to expect next</span>'
+        f"{first_line}<br><br>"
+        "<b>Expect 24–48 hours</b> for enrichment to finish, depending on current backlog.<br>"
+        "When it's complete, <b>reach out to Kit or Marcelo</b> so they can review the "
+        "enriched list and import it into HubSpot.<br><br>"
+        "Thanks for using the dropbox!"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def summarize_record_types(df) -> str:
     """Build a compact 'Prospect: 45, Partner: 10' summary from a validated df."""
     if "Record Type" not in df.columns:
@@ -260,6 +305,7 @@ def render_queue_submit(
             f"Queued for approval (queue #{queue_id}). "
             f"Reach out to **Kit** or **Marcelo** so they can approve it."
         )
+        render_next_steps(submission_list_name, f"queue #{queue_id}", queued=True)
         return True
 
     st.markdown(
@@ -413,6 +459,7 @@ def render_upload_section():
             f"**List {list_id} — “{submission_list_name}”** — all **{sent}** "
             f"rows sent to Clay for enrichment ({record_type_summary})."
         )
+        render_next_steps(submission_list_name, list_id, queued=False)
     elif sent > 0:
         msg = "; ".join(errors[:5])
         record_submission(
