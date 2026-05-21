@@ -140,8 +140,8 @@ def render_header():
     st.markdown(
         f"""
         <div style="display:flex; align-items:center; gap:14px; margin: 0 0 4px 0;">
-            <img src="data:image/png;base64,{logo_b64}" width="48" height="48"
-                 style="display:block;" />
+            <img src="data:image/png;base64,{logo_b64}" width="52" height="52"
+                 style="display:block; border-radius:12px;" />
             <h1 style="color:#001F5B; margin:0; padding:0; line-height:1.1;
                        font-size:2.4rem; font-weight:700;">{APP_TITLE}</h1>
         </div>
