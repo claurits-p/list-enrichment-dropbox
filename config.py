@@ -16,6 +16,7 @@ NAME_HEADERS = [
 ]
 
 OPTIONAL_HEADERS = [
+    "Company Name",
     "Event Related Name",
     "Outreach List Name",
     "Contact Owner",
@@ -49,6 +50,14 @@ HEADER_ALIASES = {
     "full name": "Full Name",
     "full_name": "Full Name",
     "fullname": "Full Name",
+    "company name": "Company Name",
+    "company_name": "Company Name",
+    "companyname": "Company Name",
+    "company": "Company Name",
+    "organization": "Company Name",
+    "organization name": "Company Name",
+    "org": "Company Name",
+    "account name": "Company Name",
     "event related name": "Event Related Name",
     "event_related_name": "Event Related Name",
     "outreach list name": "Outreach List Name",

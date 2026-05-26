@@ -70,6 +70,11 @@ URL_PREFIXES = ["", "", "", "", "www.", "https://", "https://www.", "http://"]
 random.seed(42)
 
 
+def _company_name_from_base(base: str) -> str:
+    """Turn a domain base like 'fintech-labs' into 'Fintech Labs'."""
+    return " ".join(part.capitalize() for part in base.replace("-", " ").split())
+
+
 def main(n: int = 300) -> None:
     headers = [
         "First Name",
@@ -77,6 +82,7 @@ def main(n: int = 300) -> None:
         "Website",
         "Email Address",
         "Record Type",
+        "Company Name",
         "Event Related Name",
         "Outreach List Name",
         "Accounting ERP Software",
@@ -94,6 +100,7 @@ def main(n: int = 300) -> None:
         "", "", "", "Outbound May", "ABM Tier 1", "Event Followup Q2",
         "ICP Discovery", "Top 500 Mid-Market",
     ]
+    company_suffixes = ["", "", " Inc.", " LLC", " Corp", ", Inc.", " Group"]
 
     with OUT.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -109,12 +116,21 @@ def main(n: int = 300) -> None:
             email_local = f"{first}.{last}".lower().replace(" ", "")
             email = f"{email_local}@{domain}"
 
+            # ~25% of rows leave Company Name blank to exercise the optional path.
+            if random.random() < 0.25:
+                company_name = ""
+            else:
+                company_name = (
+                    _company_name_from_base(base) + random.choice(company_suffixes)
+                )
+
             writer.writerow([
                 first,
                 last,
                 website,
                 email,
                 random.choice(record_types),
+                company_name,
                 random.choice(events),
                 random.choice(outreach),
                 random.choice(erp_options),
