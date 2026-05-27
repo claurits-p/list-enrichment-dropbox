@@ -14,12 +14,12 @@ sys.path.insert(0, str(ROOT))
 from PIL import Image, ImageDraw, ImageFont
 
 from config import (
-    COMPANY_DOMAIN_DISPLAY_HEADER,
     COMPANY_OPTIONAL_HEADERS,
     COMPANY_REQUIRED_HEADERS,
     CONTACT_NAME_HEADERS,
     CONTACT_OPTIONAL_HEADERS,
     CONTACT_REQUIRED_HEADERS,
+    DOMAIN_DISPLAY_HEADER,
     LIST_TYPE_COMPANY,
     LIST_TYPE_CONTACTS,
     RECORD_TYPES,
@@ -87,19 +87,21 @@ def _draw_pill(draw, x, y, text, font, bg, fg, pad_x=10, pad_y=4):
     return tw + px * 2, th + py * 2
 
 
+def _display_label(header: str) -> str:
+    """Substitute the user-facing label for the domain column."""
+    if header == "Company Domain Name":
+        return DOMAIN_DISPLAY_HEADER
+    return header
+
+
 def _build_rows(list_type: str) -> list[tuple[str, str]]:
     if list_type == LIST_TYPE_COMPANY:
-        # For company lists, the Domain column is displayed as "Website".
-        required_display = [
-            COMPANY_DOMAIN_DISPLAY_HEADER if h == "Company Domain Name" else h
-            for h in COMPANY_REQUIRED_HEADERS
-        ]
         return (
-            [(h, "Required") for h in required_display]
+            [(_display_label(h), "Required") for h in COMPANY_REQUIRED_HEADERS]
             + [(h, "Optional") for h in COMPANY_OPTIONAL_HEADERS]
         )
     return (
-        [(h, "Required") for h in CONTACT_REQUIRED_HEADERS]
+        [(_display_label(h), "Required") for h in CONTACT_REQUIRED_HEADERS]
         + [(h, "One required") for h in CONTACT_NAME_HEADERS]
         + [(h, "Optional") for h in CONTACT_OPTIONAL_HEADERS]
     )
@@ -242,16 +244,10 @@ def _render(list_type: str, out_path: Path) -> tuple[int, int]:
     )
 
     fy = y + 14 * SCALE
-    if list_type == LIST_TYPE_COMPANY:
-        domain_tip = (
-            f"Tip: {COMPANY_DOMAIN_DISPLAY_HEADER} also accepts Company Domain Name, "
-            "Domain, Company Website, URL."
-        )
-    else:
-        domain_tip = (
-            "Tip: Company Domain Name also accepts Domain, Website, "
-            "Company Website, URL."
-        )
+    domain_tip = (
+        f"Tip: {DOMAIN_DISPLAY_HEADER} also accepts Company Domain Name, "
+        "Domain, Company Website, URL."
+    )
     draw.text(
         (table_left, fy),
         domain_tip,

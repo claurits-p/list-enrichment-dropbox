@@ -62,9 +62,12 @@ COMPANY_OPTIONAL_HEADERS = [
 
 COMPANY_ALL_HEADERS = COMPANY_REQUIRED_HEADERS + COMPANY_OPTIONAL_HEADERS
 
-# Header label shown to users in the company-list template. The canonical
-# internal name remains "Company Domain Name" (and aliases keep both working).
-COMPANY_DOMAIN_DISPLAY_HEADER = "Website"
+# Header label shown to users for the domain column in BOTH list templates.
+# The canonical internal name remains "Company Domain Name" (and aliases keep
+# either label working). We normalize the domain downstream in Clay anyway.
+DOMAIN_DISPLAY_HEADER = "Website"
+# Kept as an alias for any external callers; same value.
+COMPANY_DOMAIN_DISPLAY_HEADER = DOMAIN_DISPLAY_HEADER
 
 
 # ---------------------------------------------------------------------------

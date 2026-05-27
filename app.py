@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from clay_client import get_webhook_url, send_rows_to_clay, webhook_env_name
 from config import (
     APP_TITLE,
-    COMPANY_DOMAIN_DISPLAY_HEADER,
+    DOMAIN_DISPLAY_HEADER,
     LIST_TYPE_COMPANY,
     LIST_TYPE_CONTACTS,
     LIST_TYPES,
@@ -171,14 +171,15 @@ def sample_csv_for(list_type: str) -> Path:
 
 
 def chips_for(list_type: str) -> tuple[list[str], list[str], list[str]]:
-    """Return (required_chips, name_chips, optional_chips) for display."""
-    required = required_headers_for(list_type)
-    if list_type == LIST_TYPE_COMPANY:
-        # Show the user-facing "Website" label in the chip strip
-        required = [
-            COMPANY_DOMAIN_DISPLAY_HEADER if h == "Company Domain Name" else h
-            for h in required
-        ]
+    """Return (required_chips, name_chips, optional_chips) for display.
+
+    The domain column is shown as the friendlier "Website" label everywhere
+    (canonical internal name stays "Company Domain Name").
+    """
+    required = [
+        DOMAIN_DISPLAY_HEADER if h == "Company Domain Name" else h
+        for h in required_headers_for(list_type)
+    ]
     return required, name_headers_for(list_type), optional_headers_for(list_type)
 
 
@@ -267,16 +268,12 @@ def render_format_section(list_type: str):
         unsafe_allow_html=True,
     )
 
-    if is_company:
-        st.caption(
-            f"**{COMPANY_DOMAIN_DISPLAY_HEADER}** also accepts these headers: "
-            "**Company Domain Name**, **Domain**, **Company Website**, **URL**."
-        )
-    else:
-        st.caption(
-            "`Company Domain Name` also accepts these headers: "
-            "**Domain**, **Website**, **Company Website**, **URL**."
-        )
+    st.caption(
+        f"**{DOMAIN_DISPLAY_HEADER}** also accepts these headers: "
+        "**Company Domain Name**, **Domain**, **Company Website**, **URL**. "
+        "Bare domains, full URLs, and `www.` prefixes all work — "
+        "they're normalized on the Clay side."
+    )
 
     if chips_name:
         st.markdown(
