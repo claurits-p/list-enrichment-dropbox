@@ -295,6 +295,18 @@ def _validate_domain(
         )
 
 
+def _validate_owner_email(
+    row_num: int, field_label: str, value: str, errors: list[str]
+) -> None:
+    """Owner fields are optional, but when present must be a HubSpot user email."""
+    if value and not _looks_like_email(value):
+        errors.append(
+            f"Row {row_num}: {field_label} `{value}` must be a HubSpot user email "
+            "(e.g. `claurits@paystand.com`), not a name. Leave blank if you "
+            "don't know it."
+        )
+
+
 def validate_rows(df: pd.DataFrame, list_type: str) -> list[str]:
     """Per-row validation.
 
@@ -313,6 +325,7 @@ def validate_rows(df: pd.DataFrame, list_type: str) -> list[str]:
 
         if list_type == LIST_TYPE_COMPANY:
             company_name = row["Company Name"]
+            company_owner = row.get("Company Owner", "")
             missing_fields = []
             if not domain:
                 missing_fields.append("Company Domain Name")
@@ -332,6 +345,7 @@ def validate_rows(df: pd.DataFrame, list_type: str) -> list[str]:
                     allowed_list, errors,
                 )
             _validate_domain(row_num, domain, errors)
+            _validate_owner_email(row_num, "Company Owner", company_owner, errors)
 
         else:  # Contact list
             email = row["Email"]
@@ -384,6 +398,12 @@ def validate_rows(df: pd.DataFrame, list_type: str) -> list[str]:
                     f"Row {row_num}: Email `{email}` is not a valid email address."
                 )
             _validate_domain(row_num, domain, errors)
+            _validate_owner_email(
+                row_num, "Contact Owner", row.get("Contact Owner", ""), errors,
+            )
+            _validate_owner_email(
+                row_num, "Company Owner", row.get("Company Owner", ""), errors,
+            )
 
         if len(errors) >= _MAX_ROW_ERRORS_SHOWN:
             truncated = True
