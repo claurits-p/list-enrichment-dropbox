@@ -9,12 +9,14 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from config import (
-    ALL_HEADERS,
     HEADER_ALIASES,
-    NAME_HEADERS,
-    OPTIONAL_HEADERS,
+    LIST_TYPE_COMPANY,
+    LIST_TYPE_CONTACTS,
     RECORD_TYPES,
-    REQUIRED_HEADERS,
+    all_headers_for,
+    name_headers_for,
+    optional_headers_for,
+    required_headers_for,
 )
 
 _MAX_ROWS = 50_000
@@ -106,7 +108,9 @@ def read_csv_safely(file_bytes: bytes) -> tuple[pd.DataFrame | None, list[str]]:
     return df, []
 
 
-def normalize_columns(df: pd.DataFrame) -> tuple[pd.DataFrame | None, ValidationResult]:
+def normalize_columns(
+    df: pd.DataFrame, list_type: str
+) -> tuple[pd.DataFrame | None, ValidationResult]:
     """Rename to canonical headers and validate column set."""
     result = ValidationResult()
     rename_map: dict[str, str] = {}
@@ -114,12 +118,18 @@ def normalize_columns(df: pd.DataFrame) -> tuple[pd.DataFrame | None, Validation
     unknown: list[str] = []
     duplicates: list[tuple[str, str]] = []
 
-    canonical_lookup = {_normalize_key(h): h for h in ALL_HEADERS}
+    required = required_headers_for(list_type)
+    name_headers = name_headers_for(list_type)
+    optional_headers = optional_headers_for(list_type)
+    all_headers = all_headers_for(list_type)
+    allowed_set = set(all_headers)
+
+    canonical_lookup = {_normalize_key(h): h for h in all_headers}
 
     for col in df.columns:
         key = _normalize_key(col)
         canonical = HEADER_ALIASES.get(key) or canonical_lookup.get(key)
-        if canonical is None:
+        if canonical is None or canonical not in allowed_set:
             unknown.append(col)
             continue
         if canonical in seen_canonical:
@@ -128,7 +138,7 @@ def normalize_columns(df: pd.DataFrame) -> tuple[pd.DataFrame | None, Validation
         rename_map[col] = canonical
         seen_canonical.add(canonical)
 
-    missing = [h for h in REQUIRED_HEADERS if h not in seen_canonical]
+    missing = [h for h in required if h not in seen_canonical]
     result.missing_required = missing
     result.unknown_columns = unknown
 
@@ -137,18 +147,20 @@ def normalize_columns(df: pd.DataFrame) -> tuple[pd.DataFrame | None, Validation
             "Missing required column(s): " + ", ".join(f"`{h}`" for h in missing)
         )
 
-    has_full_col = "Full Name" in seen_canonical
-    has_first_col = "First Name" in seen_canonical
-    has_last_col = "Last Name" in seen_canonical
-    if not has_full_col and not (has_first_col and has_last_col):
-        result.column_errors.append(
-            "Missing name column(s): include either a `Full Name` column "
-            "OR both `First Name` and `Last Name` columns."
-        )
+    if list_type == LIST_TYPE_CONTACTS:
+        has_full_col = "Full Name" in seen_canonical
+        has_first_col = "First Name" in seen_canonical
+        has_last_col = "Last Name" in seen_canonical
+        if not has_full_col and not (has_first_col and has_last_col):
+            result.column_errors.append(
+                "Missing name column(s): include either a `Full Name` column "
+                "OR both `First Name` and `Last Name` columns."
+            )
+
     if unknown:
         result.column_errors.append(
             "Unknown column(s): " + ", ".join(f"`{c}`" for c in unknown)
-            + " — column names must match the format exactly."
+            + " — column names must match the format exactly for this list type."
         )
     if duplicates:
         for col, can in duplicates:
@@ -161,10 +173,10 @@ def normalize_columns(df: pd.DataFrame) -> tuple[pd.DataFrame | None, Validation
         return None, result
 
     out = df.rename(columns=rename_map)
-    for h in NAME_HEADERS + OPTIONAL_HEADERS:
+    for h in name_headers + optional_headers:
         if h not in out.columns:
             out[h] = ""
-    out = out[ALL_HEADERS].copy()
+    out = out[all_headers].copy()
     for c in out.columns:
         out[c] = out[c].astype(str).str.strip()
 
@@ -196,13 +208,41 @@ def _split_full_name(full: str) -> tuple[str, str]:
     return parts[0], " ".join(parts[1:])
 
 
-def validate_rows(df: pd.DataFrame) -> list[str]:
-    """Validate per-row and backfill name fields when possible.
+def _validate_record_type(
+    df: pd.DataFrame,
+    idx: int,
+    row_num: int,
+    record_type: str,
+    record_type_lookup: dict[str, str],
+    allowed_list: str,
+    errors: list[str],
+) -> None:
+    canonical = record_type_lookup.get(record_type.strip().lower())
+    if canonical is None:
+        errors.append(
+            f"Row {row_num}: Record Type `{record_type}` is not allowed. "
+            f"Must be one of {allowed_list}."
+        )
+    else:
+        df.at[idx, "Record Type"] = canonical
 
-    Mutates df in place:
-      - Builds Full Name from First+Last when only those are provided.
-      - Derives First Name / Last Name from Full Name when those are blank.
-      - Normalizes Record Type to canonical case (Prospect/Partner/Competitor).
+
+def _validate_domain(
+    row_num: int, domain: str, errors: list[str]
+) -> None:
+    if domain and not _looks_like_domain_or_url(domain):
+        errors.append(
+            f"Row {row_num}: Company Domain Name `{domain}` does not look like a "
+            "domain or website (e.g. `acme.com` or `https://acme.com`, "
+            "not `john@acme.com`)."
+        )
+
+
+def validate_rows(df: pd.DataFrame, list_type: str) -> list[str]:
+    """Per-row validation.
+
+    For contact lists, also backfills name fields when possible (Full Name from
+    First+Last, or First/Last from Full Name).
     """
     errors: list[str] = []
     truncated = False
@@ -211,65 +251,82 @@ def validate_rows(df: pd.DataFrame) -> list[str]:
 
     for idx, row in df.iterrows():
         row_num = int(idx) + 2  # +1 for 1-indexed, +1 for header row
-        email = row["Email"]
         domain = row["Company Domain Name"]
         record_type = row["Record Type"]
-        first = row["First Name"]
-        last = row["Last Name"]
-        full = row["Full Name"]
 
-        missing_fields = []
-        if not email:
-            missing_fields.append("Email")
-        if not domain:
-            missing_fields.append("Company Domain Name")
-        if not record_type:
-            missing_fields.append("Record Type")
-        if missing_fields:
-            errors.append(
-                f"Row {row_num}: missing required field(s): "
-                + ", ".join(missing_fields)
-            )
-
-        if record_type:
-            canonical = record_type_lookup.get(record_type.strip().lower())
-            if canonical is None:
+        if list_type == LIST_TYPE_COMPANY:
+            company_name = row["Company Name"]
+            missing_fields = []
+            if not domain:
+                missing_fields.append("Company Domain Name")
+            if not record_type:
+                missing_fields.append("Record Type")
+            if not company_name:
+                missing_fields.append("Company Name")
+            if missing_fields:
                 errors.append(
-                    f"Row {row_num}: Record Type `{record_type}` is not allowed. "
-                    f"Must be one of {allowed_list}."
+                    f"Row {row_num}: missing required field(s): "
+                    + ", ".join(missing_fields)
                 )
-            else:
-                df.at[idx, "Record Type"] = canonical
 
-        if full and (not first or not last):
-            split_first, split_last = _split_full_name(full)
-            if not first and split_first:
-                df.at[idx, "First Name"] = split_first
-                first = split_first
-            if not last and split_last:
-                df.at[idx, "Last Name"] = split_last
-                last = split_last
+            if record_type:
+                _validate_record_type(
+                    df, idx, row_num, record_type, record_type_lookup,
+                    allowed_list, errors,
+                )
+            _validate_domain(row_num, domain, errors)
 
-        if not full and first and last:
-            df.at[idx, "Full Name"] = f"{first} {last}".strip()
-            full = f"{first} {last}".strip()
+        else:  # Contact list
+            email = row["Email"]
+            first = row["First Name"]
+            last = row["Last Name"]
+            full = row["Full Name"]
 
-        has_full = bool(full)
-        has_first_last = bool(first) and bool(last)
-        if not has_full and not has_first_last:
-            errors.append(
-                f"Row {row_num}: provide either `Full Name` OR both "
-                "`First Name` and `Last Name`."
-            )
+            missing_fields = []
+            if not email:
+                missing_fields.append("Email")
+            if not domain:
+                missing_fields.append("Company Domain Name")
+            if not record_type:
+                missing_fields.append("Record Type")
+            if missing_fields:
+                errors.append(
+                    f"Row {row_num}: missing required field(s): "
+                    + ", ".join(missing_fields)
+                )
 
-        if email and not _looks_like_email(email):
-            errors.append(f"Row {row_num}: Email `{email}` is not a valid email address.")
-        if domain and not _looks_like_domain_or_url(domain):
-            errors.append(
-                f"Row {row_num}: Company Domain Name `{domain}` does not look like a "
-                "domain or website (e.g. `acme.com` or `https://acme.com`, "
-                "not `john@acme.com`)."
-            )
+            if record_type:
+                _validate_record_type(
+                    df, idx, row_num, record_type, record_type_lookup,
+                    allowed_list, errors,
+                )
+
+            if full and (not first or not last):
+                split_first, split_last = _split_full_name(full)
+                if not first and split_first:
+                    df.at[idx, "First Name"] = split_first
+                    first = split_first
+                if not last and split_last:
+                    df.at[idx, "Last Name"] = split_last
+                    last = split_last
+
+            if not full and first and last:
+                df.at[idx, "Full Name"] = f"{first} {last}".strip()
+                full = f"{first} {last}".strip()
+
+            has_full = bool(full)
+            has_first_last = bool(first) and bool(last)
+            if not has_full and not has_first_last:
+                errors.append(
+                    f"Row {row_num}: provide either `Full Name` OR both "
+                    "`First Name` and `Last Name`."
+                )
+
+            if email and not _looks_like_email(email):
+                errors.append(
+                    f"Row {row_num}: Email `{email}` is not a valid email address."
+                )
+            _validate_domain(row_num, domain, errors)
 
         if len(errors) >= _MAX_ROW_ERRORS_SHOWN:
             truncated = True
@@ -284,8 +341,10 @@ def validate_rows(df: pd.DataFrame) -> list[str]:
     return errors
 
 
-def validate_upload(file_bytes: bytes) -> ValidationResult:
-    """One-shot end-to-end CSV validation."""
+def validate_upload(
+    file_bytes: bytes, list_type: str = LIST_TYPE_CONTACTS
+) -> ValidationResult:
+    """One-shot end-to-end CSV validation for the given list type."""
     result = ValidationResult()
 
     df, read_errors = read_csv_safely(file_bytes)
@@ -301,11 +360,11 @@ def validate_upload(file_bytes: bytes) -> ValidationResult:
         )
         return result
 
-    normalized, col_result = normalize_columns(df)
+    normalized, col_result = normalize_columns(df, list_type)
     if col_result.column_errors:
         return col_result
 
     assert normalized is not None
-    row_errors = validate_rows(normalized)
+    row_errors = validate_rows(normalized, list_type)
     col_result.row_errors = row_errors
     return col_result

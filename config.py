@@ -1,21 +1,34 @@
 """Column schema for List Enrichment Dropbox."""
 
-# Always required (per row)
-REQUIRED_HEADERS = [
+# ---------------------------------------------------------------------------
+# List types
+# ---------------------------------------------------------------------------
+
+LIST_TYPE_CONTACTS = "Contacts"
+LIST_TYPE_COMPANY = "Companies"
+LIST_TYPES = (LIST_TYPE_CONTACTS, LIST_TYPE_COMPANY)
+
+
+# ---------------------------------------------------------------------------
+# Contact list schema
+# ---------------------------------------------------------------------------
+
+# Always required (per row) — contact lists
+CONTACT_REQUIRED_HEADERS = [
     "Email",
     "Company Domain Name",
     "Record Type",
 ]
 
-# Headers about the person's name. CSV must include all three columns,
-# but per row we only require: Full Name OR (First Name AND Last Name).
-NAME_HEADERS = [
+# Headers about the person's name. CSV must include columns such that EITHER
+# Full Name is present OR both First Name + Last Name are present.
+CONTACT_NAME_HEADERS = [
     "First Name",
     "Last Name",
     "Full Name",
 ]
 
-OPTIONAL_HEADERS = [
+CONTACT_OPTIONAL_HEADERS = [
     "Company Name",
     "Event Related Name",
     "Outreach List Name",
@@ -24,11 +37,84 @@ OPTIONAL_HEADERS = [
     "Accounting ERP Software",
 ]
 
-# Headers that MUST exist in the CSV (their values may be conditionally optional)
-EXPECTED_HEADERS = REQUIRED_HEADERS + NAME_HEADERS
-ALL_HEADERS = REQUIRED_HEADERS + NAME_HEADERS + OPTIONAL_HEADERS
+CONTACT_ALL_HEADERS = (
+    CONTACT_REQUIRED_HEADERS + CONTACT_NAME_HEADERS + CONTACT_OPTIONAL_HEADERS
+)
 
-# Normalize common variations to canonical names
+
+# ---------------------------------------------------------------------------
+# Company list schema
+# ---------------------------------------------------------------------------
+
+# Always required (per row) — company lists
+COMPANY_REQUIRED_HEADERS = [
+    "Company Domain Name",
+    "Record Type",
+    "Company Name",
+]
+
+COMPANY_OPTIONAL_HEADERS = [
+    "Event Related Name",
+    "Outreach List Name",
+    "Company Owner",
+    "Accounting ERP Software",
+]
+
+COMPANY_ALL_HEADERS = COMPANY_REQUIRED_HEADERS + COMPANY_OPTIONAL_HEADERS
+
+# Header label shown to users in the company-list template. The canonical
+# internal name remains "Company Domain Name" (and aliases keep both working).
+COMPANY_DOMAIN_DISPLAY_HEADER = "Website"
+
+
+# ---------------------------------------------------------------------------
+# Per-list-type accessors
+# ---------------------------------------------------------------------------
+
+def required_headers_for(list_type: str) -> list[str]:
+    if list_type == LIST_TYPE_COMPANY:
+        return list(COMPANY_REQUIRED_HEADERS)
+    return list(CONTACT_REQUIRED_HEADERS)
+
+
+def name_headers_for(list_type: str) -> list[str]:
+    if list_type == LIST_TYPE_COMPANY:
+        return []
+    return list(CONTACT_NAME_HEADERS)
+
+
+def optional_headers_for(list_type: str) -> list[str]:
+    if list_type == LIST_TYPE_COMPANY:
+        return list(COMPANY_OPTIONAL_HEADERS)
+    return list(CONTACT_OPTIONAL_HEADERS)
+
+
+def all_headers_for(list_type: str) -> list[str]:
+    if list_type == LIST_TYPE_COMPANY:
+        return list(COMPANY_ALL_HEADERS)
+    return list(CONTACT_ALL_HEADERS)
+
+
+def expected_headers_for(list_type: str) -> list[str]:
+    """Headers that must exist in the CSV (their values may be conditionally optional)."""
+    return required_headers_for(list_type) + name_headers_for(list_type)
+
+
+# ---------------------------------------------------------------------------
+# Legacy aliases (still consumed by some scripts) — default to contact schema
+# ---------------------------------------------------------------------------
+
+REQUIRED_HEADERS = CONTACT_REQUIRED_HEADERS
+NAME_HEADERS = CONTACT_NAME_HEADERS
+OPTIONAL_HEADERS = CONTACT_OPTIONAL_HEADERS
+EXPECTED_HEADERS = CONTACT_REQUIRED_HEADERS + CONTACT_NAME_HEADERS
+ALL_HEADERS = CONTACT_ALL_HEADERS
+
+
+# ---------------------------------------------------------------------------
+# Header aliases — normalize common variations to canonical names
+# ---------------------------------------------------------------------------
+
 HEADER_ALIASES = {
     "email": "Email",
     "email address": "Email",
@@ -75,12 +161,31 @@ HEADER_ALIASES = {
     "contact type": "Record Type",
 }
 
+
+# ---------------------------------------------------------------------------
+# App-wide constants
+# ---------------------------------------------------------------------------
+
 APP_TITLE = "List Enrichment Dropbox"
 DATA_DIR = "data"
 DB_PATH = f"{DATA_DIR}/submissions.db"
 
-# Lists with more rows than this need admin approval before being sent to Clay.
-LARGE_LIST_THRESHOLD = 1000
+# Lists with more rows than this need admin approval. Company lists fan out via
+# ZI "Find Contacts", so each company row can become many contact rows — the
+# threshold for that type is set much lower.
+LARGE_LIST_THRESHOLDS = {
+    LIST_TYPE_CONTACTS: 1000,
+    LIST_TYPE_COMPANY: 100,
+}
 
-# Allowed Record Type values selected on the upload form
+LARGE_LIST_THRESHOLD = LARGE_LIST_THRESHOLDS[LIST_TYPE_CONTACTS]  # legacy
+
+
+def threshold_for(list_type: str) -> int:
+    return LARGE_LIST_THRESHOLDS.get(
+        list_type, LARGE_LIST_THRESHOLDS[LIST_TYPE_CONTACTS]
+    )
+
+
+# Allowed Record Type values (per row in both list types)
 RECORD_TYPES = ("Prospect", "Partner", "Competitor")

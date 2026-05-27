@@ -7,9 +7,35 @@ from typing import Any
 import pandas as pd
 import requests
 
+from config import LIST_TYPE_COMPANY, LIST_TYPE_CONTACTS
 
-def get_webhook_url() -> str | None:
+
+def get_contact_webhook_url() -> str | None:
+    """Webhook for contact-list submissions.
+
+    Prefers the explicit CLAY_CONTACT_WEBHOOK_URL but falls back to the legacy
+    CLAY_WEBHOOK_URL so existing deployments keep working without renaming.
+    """
+    url = os.getenv("CLAY_CONTACT_WEBHOOK_URL", "").strip()
+    if url:
+        return url
     return os.getenv("CLAY_WEBHOOK_URL", "").strip() or None
+
+
+def get_company_webhook_url() -> str | None:
+    return os.getenv("CLAY_COMPANY_WEBHOOK_URL", "").strip() or None
+
+
+def get_webhook_url(list_type: str = LIST_TYPE_CONTACTS) -> str | None:
+    if list_type == LIST_TYPE_COMPANY:
+        return get_company_webhook_url()
+    return get_contact_webhook_url()
+
+
+def webhook_env_name(list_type: str) -> str:
+    if list_type == LIST_TYPE_COMPANY:
+        return "CLAY_COMPANY_WEBHOOK_URL"
+    return "CLAY_CONTACT_WEBHOOK_URL (or CLAY_WEBHOOK_URL)"
 
 
 def get_auth_token() -> str | None:
@@ -22,14 +48,18 @@ def row_to_payload(
     row_index: int,
     total_rows: int,
     *,
+    list_type: str = LIST_TYPE_CONTACTS,
     submitted_by: str = "",
+    submitted_by_email: str = "",
     submission_list_name: str = "",
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "list_id": list_id,
+        "list_type": list_type,
         "row_index": row_index,
         "total_rows": total_rows,
         "submitted_by": submitted_by,
+        "submitted_by_email": submitted_by_email,
         "submission_list_name": submission_list_name,
     }
     for col, val in row.items():
@@ -44,7 +74,9 @@ def send_rows_to_clay(
     df: pd.DataFrame,
     list_id: str,
     *,
+    list_type: str = LIST_TYPE_CONTACTS,
     submitted_by: str = "",
+    submitted_by_email: str = "",
     submission_list_name: str = "",
     batch_pause_sec: float = 0.05,
     timeout_sec: int = 30,
@@ -53,9 +85,13 @@ def send_rows_to_clay(
     POST one row per request (Clay webhook default).
     Returns (success_count, error_messages).
     """
-    url = get_webhook_url()
+    url = get_webhook_url(list_type)
     if not url:
-        return 0, ["CLAY_WEBHOOK_URL is not set. Add it to your .env file."]
+        env_name = webhook_env_name(list_type)
+        return 0, [
+            f"{env_name} is not set. Add it to Streamlit Secrets (or .env locally) "
+            f"before sending {list_type.lower()} lists."
+        ]
 
     headers = {"Content-Type": "application/json"}
     token = get_auth_token()
@@ -72,7 +108,9 @@ def send_rows_to_clay(
             list_id,
             i,
             total,
+            list_type=list_type,
             submitted_by=submitted_by,
+            submitted_by_email=submitted_by_email,
             submission_list_name=submission_list_name,
         )
         try:

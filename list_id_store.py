@@ -54,6 +54,8 @@ def _pg_ensure_schema() -> None:
                     filename TEXT,
                     list_name TEXT,
                     submitted_by TEXT,
+                    submitted_by_email TEXT,
+                    list_type TEXT,
                     record_type TEXT,
                     status TEXT NOT NULL,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -66,7 +68,9 @@ def _pg_ensure_schema() -> None:
                 CREATE TABLE IF NOT EXISTS pending_approvals (
                     queue_id BIGSERIAL PRIMARY KEY,
                     submitted_by TEXT NOT NULL,
+                    submitted_by_email TEXT,
                     list_name TEXT NOT NULL,
+                    list_type TEXT,
                     record_type TEXT,
                     row_count INTEGER NOT NULL,
                     filename TEXT,
@@ -75,6 +79,23 @@ def _pg_ensure_schema() -> None:
                     status TEXT NOT NULL DEFAULT 'pending'
                 )
                 """
+            )
+            # Migrations for pre-existing deployments (idempotent)
+            cur.execute(
+                "ALTER TABLE submissions "
+                "ADD COLUMN IF NOT EXISTS submitted_by_email TEXT"
+            )
+            cur.execute(
+                "ALTER TABLE submissions "
+                "ADD COLUMN IF NOT EXISTS list_type TEXT"
+            )
+            cur.execute(
+                "ALTER TABLE pending_approvals "
+                "ADD COLUMN IF NOT EXISTS submitted_by_email TEXT"
+            )
+            cur.execute(
+                "ALTER TABLE pending_approvals "
+                "ADD COLUMN IF NOT EXISTS list_type TEXT"
             )
             cur.execute(
                 """
@@ -125,6 +146,8 @@ def _pg_record_submission(
     status: str,
     list_name: str | None,
     submitted_by: str | None,
+    submitted_by_email: str | None,
+    list_type: str | None,
     record_type: str | None,
     error_message: str | None,
 ) -> None:
@@ -134,13 +157,16 @@ def _pg_record_submission(
                 """
                 INSERT INTO submissions
                 (list_id, row_count, filename, list_name, submitted_by,
-                 record_type, status, created_at, error_message)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 submitted_by_email, list_type, record_type, status,
+                 created_at, error_message)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (list_id) DO UPDATE SET
                   row_count = EXCLUDED.row_count,
                   filename = EXCLUDED.filename,
                   list_name = EXCLUDED.list_name,
                   submitted_by = EXCLUDED.submitted_by,
+                  submitted_by_email = EXCLUDED.submitted_by_email,
+                  list_type = EXCLUDED.list_type,
                   record_type = EXCLUDED.record_type,
                   status = EXCLUDED.status,
                   created_at = EXCLUDED.created_at,
@@ -152,6 +178,8 @@ def _pg_record_submission(
                     filename,
                     list_name,
                     submitted_by,
+                    submitted_by_email,
+                    list_type,
                     record_type,
                     status,
                     datetime.now(timezone.utc),
@@ -165,8 +193,9 @@ def _pg_recent_submissions(limit: int) -> list[dict]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT list_id, list_name, submitted_by, record_type, row_count,
-                       status, created_at, filename, error_message
+                SELECT list_id, list_name, submitted_by, submitted_by_email,
+                       list_type, record_type, row_count, status, created_at,
+                       filename, error_message
                 FROM submissions
                 ORDER BY created_at DESC
                 LIMIT %s
@@ -197,7 +226,9 @@ def _pg_clear_history(reset_counter: bool) -> int:
 
 def _pg_add_to_queue(
     submitted_by: str,
+    submitted_by_email: str | None,
     list_name: str,
+    list_type: str | None,
     row_count: int,
     filename: str | None,
     csv_bytes: bytes,
@@ -208,14 +239,16 @@ def _pg_add_to_queue(
             cur.execute(
                 """
                 INSERT INTO pending_approvals
-                (submitted_by, list_name, record_type, row_count, filename,
-                 csv_bytes, submitted_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                (submitted_by, submitted_by_email, list_name, list_type,
+                 record_type, row_count, filename, csv_bytes, submitted_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING queue_id
                 """,
                 (
                     submitted_by,
+                    submitted_by_email,
                     list_name,
+                    list_type,
                     record_type,
                     row_count,
                     filename,
@@ -232,8 +265,8 @@ def _pg_list_pending() -> list[dict]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT queue_id, submitted_by, list_name, record_type, row_count,
-                       filename, submitted_at
+                SELECT queue_id, submitted_by, submitted_by_email, list_name,
+                       list_type, record_type, row_count, filename, submitted_at
                 FROM pending_approvals
                 WHERE status = 'pending'
                 ORDER BY submitted_at ASC
@@ -302,6 +335,8 @@ def _sqlite_ensure_db() -> None:
                 filename TEXT,
                 list_name TEXT,
                 submitted_by TEXT,
+                submitted_by_email TEXT,
+                list_type TEXT,
                 record_type TEXT,
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL,
@@ -312,7 +347,10 @@ def _sqlite_ensure_db() -> None:
         existing_cols = {
             row[1] for row in conn.execute("PRAGMA table_info(submissions)").fetchall()
         }
-        for col in ("list_name", "submitted_by", "record_type"):
+        for col in (
+            "list_name", "submitted_by", "submitted_by_email", "list_type",
+            "record_type",
+        ):
             if col not in existing_cols:
                 conn.execute(f"ALTER TABLE submissions ADD COLUMN {col} TEXT")
         conn.execute(
@@ -320,7 +358,9 @@ def _sqlite_ensure_db() -> None:
             CREATE TABLE IF NOT EXISTS pending_approvals (
                 queue_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 submitted_by TEXT NOT NULL,
+                submitted_by_email TEXT,
                 list_name TEXT NOT NULL,
+                list_type TEXT,
                 record_type TEXT,
                 row_count INTEGER NOT NULL,
                 filename TEXT,
@@ -335,8 +375,11 @@ def _sqlite_ensure_db() -> None:
                 "PRAGMA table_info(pending_approvals)"
             ).fetchall()
         }
-        if "record_type" not in existing_pending_cols:
-            conn.execute("ALTER TABLE pending_approvals ADD COLUMN record_type TEXT")
+        for col in ("record_type", "submitted_by_email", "list_type"):
+            if col not in existing_pending_cols:
+                conn.execute(
+                    f"ALTER TABLE pending_approvals ADD COLUMN {col} TEXT"
+                )
         conn.execute(
             "INSERT OR IGNORE INTO counter (id, last_list_id) VALUES (1, 0)"
         )
@@ -364,22 +407,26 @@ def record_submission(
     status: str,
     list_name: str | None = None,
     submitted_by: str | None = None,
+    submitted_by_email: str | None = None,
+    list_type: str | None = None,
     record_type: str | None = None,
     error_message: str | None = None,
 ) -> None:
     if _is_postgres():
         return _pg_record_submission(
             list_id, row_count, filename, status,
-            list_name, submitted_by, record_type, error_message,
+            list_name, submitted_by, submitted_by_email, list_type,
+            record_type, error_message,
         )
     _sqlite_ensure_db()
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             """
             INSERT OR REPLACE INTO submissions
-            (list_id, row_count, filename, list_name, submitted_by, record_type,
-             status, created_at, error_message)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (list_id, row_count, filename, list_name, submitted_by,
+             submitted_by_email, list_type, record_type, status, created_at,
+             error_message)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 list_id,
@@ -387,6 +434,8 @@ def record_submission(
                 filename,
                 list_name,
                 submitted_by,
+                submitted_by_email,
+                list_type,
                 record_type,
                 status,
                 datetime.now(timezone.utc).isoformat(),
@@ -403,8 +452,9 @@ def recent_submissions(limit: int = 25) -> list[dict]:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             """
-            SELECT list_id, list_name, submitted_by, record_type, row_count, status,
-                   created_at, filename, error_message
+            SELECT list_id, list_name, submitted_by, submitted_by_email,
+                   list_type, record_type, row_count, status, created_at,
+                   filename, error_message
             FROM submissions
             ORDER BY created_at DESC
             LIMIT ?
@@ -433,23 +483,28 @@ def add_to_approval_queue(
     filename: str | None,
     csv_bytes: bytes,
     record_type: str | None = None,
+    submitted_by_email: str | None = None,
+    list_type: str | None = None,
 ) -> int:
     if _is_postgres():
         return _pg_add_to_queue(
-            submitted_by, list_name, row_count, filename, csv_bytes, record_type
+            submitted_by, submitted_by_email, list_name, list_type,
+            row_count, filename, csv_bytes, record_type,
         )
     _sqlite_ensure_db()
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute(
             """
             INSERT INTO pending_approvals
-            (submitted_by, list_name, record_type, row_count, filename,
-             csv_bytes, submitted_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (submitted_by, submitted_by_email, list_name, list_type,
+             record_type, row_count, filename, csv_bytes, submitted_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 submitted_by,
+                submitted_by_email,
                 list_name,
+                list_type,
                 record_type,
                 row_count,
                 filename,
@@ -468,8 +523,8 @@ def list_pending_approvals() -> list[dict]:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             """
-            SELECT queue_id, submitted_by, list_name, record_type, row_count,
-                   filename, submitted_at
+            SELECT queue_id, submitted_by, submitted_by_email, list_name,
+                   list_type, record_type, row_count, filename, submitted_at
             FROM pending_approvals
             WHERE status = 'pending'
             ORDER BY submitted_at ASC

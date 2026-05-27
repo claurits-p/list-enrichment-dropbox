@@ -1,4 +1,9 @@
-"""Generate assets/format_guide.png — clean light theme, crisp text."""
+"""Generate the per-list-type format guide PNGs in assets/.
+
+Produces:
+  assets/format_guide_contacts.png
+  assets/format_guide_company.png
+"""
 
 import sys
 from pathlib import Path
@@ -8,9 +13,21 @@ sys.path.insert(0, str(ROOT))
 
 from PIL import Image, ImageDraw, ImageFont
 
-from config import NAME_HEADERS, OPTIONAL_HEADERS, RECORD_TYPES, REQUIRED_HEADERS
+from config import (
+    COMPANY_DOMAIN_DISPLAY_HEADER,
+    COMPANY_OPTIONAL_HEADERS,
+    COMPANY_REQUIRED_HEADERS,
+    CONTACT_NAME_HEADERS,
+    CONTACT_OPTIONAL_HEADERS,
+    CONTACT_REQUIRED_HEADERS,
+    LIST_TYPE_COMPANY,
+    LIST_TYPE_CONTACTS,
+    RECORD_TYPES,
+)
 
-OUT = ROOT / "assets" / "format_guide.png"
+ASSETS = ROOT / "assets"
+OUT_CONTACTS = ASSETS / "format_guide_contacts.png"
+OUT_COMPANY = ASSETS / "format_guide_company.png"
 
 SCALE = 4  # render at 4x then downscale for very crisp text
 
@@ -70,23 +87,46 @@ def _draw_pill(draw, x, y, text, font, bg, fg, pad_x=10, pad_y=4):
     return tw + px * 2, th + py * 2
 
 
-def main() -> None:
+def _build_rows(list_type: str) -> list[tuple[str, str]]:
+    if list_type == LIST_TYPE_COMPANY:
+        # For company lists, the Domain column is displayed as "Website".
+        required_display = [
+            COMPANY_DOMAIN_DISPLAY_HEADER if h == "Company Domain Name" else h
+            for h in COMPANY_REQUIRED_HEADERS
+        ]
+        return (
+            [(h, "Required") for h in required_display]
+            + [(h, "Optional") for h in COMPANY_OPTIONAL_HEADERS]
+        )
+    return (
+        [(h, "Required") for h in CONTACT_REQUIRED_HEADERS]
+        + [(h, "One required") for h in CONTACT_NAME_HEADERS]
+        + [(h, "Optional") for h in CONTACT_OPTIONAL_HEADERS]
+    )
+
+
+def _render(list_type: str, out_path: Path) -> tuple[int, int]:
+    title_suffix = (
+        "— Company list" if list_type == LIST_TYPE_COMPANY else "— Contact list"
+    )
+    show_name_bar = list_type == LIST_TYPE_CONTACTS
+
     title_h = 38
-    name_bar_h = 60
+    name_bar_h = 60 if show_name_bar else 0
+    name_bar_gap = 14 if show_name_bar else 8
     table_header_h = 32
     row_h = 30
     col1_pad = 16
     col2_w = 160
     pad = 22
     footer_h = 48
-    rows = (
-        [(h, "Required") for h in REQUIRED_HEADERS]
-        + [(h, "One required") for h in NAME_HEADERS]
-        + [(h, "Optional") for h in OPTIONAL_HEADERS]
-    )
+    rows = _build_rows(list_type)
 
     w = 540
-    h = pad + title_h + name_bar_h + 14 + table_header_h + row_h * len(rows) + footer_h + pad
+    h = (
+        pad + title_h + name_bar_h + name_bar_gap
+        + table_header_h + row_h * len(rows) + footer_h + pad
+    )
 
     W, H = w * SCALE, h * SCALE
     img = Image.new("RGB", (W, H), COLOR_BG)
@@ -100,45 +140,44 @@ def main() -> None:
     name_bar_title_font = _font(11, bold=True)
     name_bar_body_font = _font(13)
 
-    # title
     draw.text(
         (pad * SCALE, pad * SCALE),
-        "List Enrichment Dropbox CSV columns",
+        f"List Enrichment Dropbox CSV columns {title_suffix}",
         fill=COLOR_TITLE,
         font=title_font,
     )
 
-    # name-rule bar
-    nb_top = (pad + title_h) * SCALE
-    nb_bottom = nb_top + name_bar_h * SCALE
-    nb_left = pad * SCALE
-    nb_right = (w - pad) * SCALE
-    draw.rounded_rectangle(
-        [nb_left, nb_top, nb_right, nb_bottom],
-        radius=8 * SCALE,
-        fill=COLOR_NAME_BAR_BG,
-        outline=COLOR_NAME_BAR_BORDER,
-        width=int(1.5 * SCALE),
-    )
-    draw.text(
-        (nb_left + 14 * SCALE, nb_top + 10 * SCALE),
-        "NAME RULE",
-        fill=COLOR_NAME_BAR_TITLE,
-        font=name_bar_title_font,
-    )
-    draw.text(
-        (nb_left + 14 * SCALE, nb_top + 28 * SCALE),
-        "Include Full Name  OR  both First Name + Last Name (per row).",
-        fill=COLOR_NAME_BAR_BODY,
-        font=name_bar_body_font,
-    )
+    if show_name_bar:
+        nb_top = (pad + title_h) * SCALE
+        nb_bottom = nb_top + name_bar_h * SCALE
+        nb_left = pad * SCALE
+        nb_right = (w - pad) * SCALE
+        draw.rounded_rectangle(
+            [nb_left, nb_top, nb_right, nb_bottom],
+            radius=8 * SCALE,
+            fill=COLOR_NAME_BAR_BG,
+            outline=COLOR_NAME_BAR_BORDER,
+            width=int(1.5 * SCALE),
+        )
+        draw.text(
+            (nb_left + 14 * SCALE, nb_top + 10 * SCALE),
+            "NAME RULE",
+            fill=COLOR_NAME_BAR_TITLE,
+            font=name_bar_title_font,
+        )
+        draw.text(
+            (nb_left + 14 * SCALE, nb_top + 28 * SCALE),
+            "Include Full Name  OR  both First Name + Last Name (per row).",
+            fill=COLOR_NAME_BAR_BODY,
+            font=name_bar_body_font,
+        )
+        table_top = nb_bottom + name_bar_gap * SCALE
+    else:
+        table_top = (pad + title_h + name_bar_gap) * SCALE
 
-    # table
-    table_top = nb_bottom + 14 * SCALE
     table_left = pad * SCALE
     table_right = (w - pad) * SCALE
 
-    # header bar
     draw.rounded_rectangle(
         [table_left, table_top, table_right, table_top + table_header_h * SCALE],
         radius=6 * SCALE,
@@ -157,7 +196,6 @@ def main() -> None:
         font=header_font,
     )
 
-    # rows
     y = table_top + table_header_h * SCALE
     for ri, (column, category) in enumerate(rows):
         if ri % 2 == 0:
@@ -196,7 +234,6 @@ def main() -> None:
             )
         y += row_h * SCALE
 
-    # outer table border
     draw.rounded_rectangle(
         [table_left, table_top, table_right, y],
         radius=6 * SCALE,
@@ -204,12 +241,20 @@ def main() -> None:
         width=int(1.0 * SCALE),
     )
 
-    # footer
     fy = y + 14 * SCALE
+    if list_type == LIST_TYPE_COMPANY:
+        domain_tip = (
+            f"Tip: {COMPANY_DOMAIN_DISPLAY_HEADER} also accepts Company Domain Name, "
+            "Domain, Company Website, URL."
+        )
+    else:
+        domain_tip = (
+            "Tip: Company Domain Name also accepts Domain, Website, "
+            "Company Website, URL."
+        )
     draw.text(
         (table_left, fy),
-        "Tip: Company Domain Name also accepts Domain, Website, "
-        "Company Website, URL.",
+        domain_tip,
         fill=COLOR_TEXT_MUTED,
         font=footer_font,
     )
@@ -221,9 +266,18 @@ def main() -> None:
     )
 
     final = img.resize((w, h), Image.LANCZOS)
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    final.save(OUT, optimize=True)
-    print(f"Wrote {OUT} ({w}x{h}, rendered at {W}x{H})")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    final.save(out_path, optimize=True)
+    return w, h
+
+
+def main() -> None:
+    for list_type, out_path in (
+        (LIST_TYPE_CONTACTS, OUT_CONTACTS),
+        (LIST_TYPE_COMPANY, OUT_COMPANY),
+    ):
+        w, h = _render(list_type, out_path)
+        print(f"Wrote {out_path} ({w}x{h})")
 
 
 if __name__ == "__main__":

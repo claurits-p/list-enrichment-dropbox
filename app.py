@@ -1,19 +1,24 @@
 """List Enrichment Dropbox — Streamlit UI."""
 import hashlib
 import os
+import re
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
-from clay_client import get_webhook_url, send_rows_to_clay
+from clay_client import get_webhook_url, send_rows_to_clay, webhook_env_name
 from config import (
     APP_TITLE,
-    LARGE_LIST_THRESHOLD,
-    NAME_HEADERS,
-    OPTIONAL_HEADERS,
-    REQUIRED_HEADERS,
+    COMPANY_DOMAIN_DISPLAY_HEADER,
+    LIST_TYPE_COMPANY,
+    LIST_TYPE_CONTACTS,
+    LIST_TYPES,
+    name_headers_for,
+    optional_headers_for,
+    required_headers_for,
+    threshold_for,
 )
 from list_id_store import (
     add_to_approval_queue,
@@ -150,8 +155,31 @@ st.markdown(
 )
 
 ASSETS = Path(__file__).parent / "assets"
-FORMAT_IMAGE = ASSETS / "format_guide.png"
-SAMPLE_CSV = ASSETS / "sample_template.csv"
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def format_image_for(list_type: str) -> Path:
+    if list_type == LIST_TYPE_COMPANY:
+        return ASSETS / "format_guide_company.png"
+    return ASSETS / "format_guide_contacts.png"
+
+
+def sample_csv_for(list_type: str) -> Path:
+    if list_type == LIST_TYPE_COMPANY:
+        return ASSETS / "sample_template_company.csv"
+    return ASSETS / "sample_template_contacts.csv"
+
+
+def chips_for(list_type: str) -> tuple[list[str], list[str], list[str]]:
+    """Return (required_chips, name_chips, optional_chips) for display."""
+    required = required_headers_for(list_type)
+    if list_type == LIST_TYPE_COMPANY:
+        # Show the user-facing "Website" label in the chip strip
+        required = [
+            COMPANY_DOMAIN_DISPLAY_HEADER if h == "Company Domain Name" else h
+            for h in required
+        ]
+    return required, name_headers_for(list_type), optional_headers_for(list_type)
 
 
 def render_header():
@@ -167,7 +195,7 @@ def render_header():
                        font-size:2.4rem; font-weight:700;">{APP_TITLE}</h1>
         </div>
         <div class="section-sub" style="margin-top:0;">
-            Upload a CSV in the required format. Rows are sent to Clay for enrichment.
+            Upload a CSV of contacts or target accounts. Rows are sent to Clay for enrichment.
         </div>
         """,
         unsafe_allow_html=True,
@@ -175,75 +203,104 @@ def render_header():
 
 
 def render_notice():
+    contact_threshold = threshold_for(LIST_TYPE_CONTACTS)
+    company_threshold = threshold_for(LIST_TYPE_COMPANY)
     st.markdown(
         '<div class="notice">'
         "<b>Heads up before you upload:</b><br>"
-        "Contacts you submit go through Clay enrichment and qualification. "
-        "<b>Not every contact will make it through.</b> Some may be filtered out, "
+        "Rows you submit go through Clay enrichment and qualification. "
+        "<b>Not every row will make it through.</b> Some may be filtered out, "
         "deduped, or removed if they don't meet our criteria. "
         "<b>Ownership won't always land with you.</b> Existing contact or company owners "
         "in HubSpot won't be overwritten, so some records will stay with their current owner.<br>"
-        f"<b>Lists over {LARGE_LIST_THRESHOLD:,} rows need admin approval.</b> "
-        "If your list is bigger, it goes into the approval queue and Kit or "
-        "Marcelo will release it for enrichment. "
-        "Thanks for understanding!"
+        f"<b>Contact lists over {contact_threshold:,} rows and company lists over "
+        f"{company_threshold:,} rows need admin approval.</b> Company lists fan out via "
+        "ZoomInfo's Find Contacts, so each company can become many contacts — that's why "
+        "the threshold is lower. Larger lists go into the approval queue and Kit or "
+        "Marcelo will release them. Thanks for understanding!"
         "</div>",
         unsafe_allow_html=True,
     )
 
 
-def render_webhook_status():
-    if get_webhook_url():
+def render_webhook_status(list_type: str):
+    if get_webhook_url(list_type):
         st.markdown(
-            '<span class="status-pill status-ok">Clay webhook configured</span>',
+            f'<span class="status-pill status-ok">Clay webhook configured '
+            f'({list_type})</span>',
             unsafe_allow_html=True,
         )
     else:
+        env_name = webhook_env_name(list_type)
         st.markdown(
-            '<span class="status-pill status-warn">Clay webhook not configured</span>',
+            f'<span class="status-pill status-warn">Clay webhook not configured '
+            f'({list_type})</span>',
             unsafe_allow_html=True,
         )
         st.caption(
-            "Add `CLAY_WEBHOOK_URL` to Streamlit Secrets (or `.env` locally) "
-            "before submissions can be sent."
+            f"Add `{env_name}` to Streamlit Secrets (or `.env` locally) "
+            f"before {list_type.lower()} list submissions can be sent."
         )
 
 
-def render_format_section():
-    st.subheader("Required CSV format")
+def render_format_section(list_type: str):
+    is_company = list_type == LIST_TYPE_COMPANY
+    label_for = "Company list" if is_company else "Contact list"
+    st.subheader(f"Required CSV format — {label_for}")
     st.markdown(
         '<div class="section-sub">'
-        "Headers must match exactly. Required fields cannot be blank."
+        "Headers must match exactly. Required fields cannot be blank. "
+        "Switch the <b>List type</b> above to see the other format."
         "</div>",
         unsafe_allow_html=True,
     )
 
-    if FORMAT_IMAGE.exists():
-        st.image(str(FORMAT_IMAGE), width=540)
+    format_image = format_image_for(list_type)
+    if format_image.exists():
+        st.image(str(format_image), width=540)
 
-    chips_required = "".join(f'<span class="chip">{h}</span>' for h in REQUIRED_HEADERS)
-    chips_name = "".join(f'<span class="chip chip-name">{h}</span>' for h in NAME_HEADERS)
-    chips_optional = "".join(f'<span class="chip chip-opt">{h}</span>' for h in OPTIONAL_HEADERS)
+    chips_required, chips_name, chips_optional = chips_for(list_type)
+
     st.markdown("**Required columns**", unsafe_allow_html=True)
-    st.markdown(chips_required, unsafe_allow_html=True)
-    st.caption(
-        "`Company Domain Name` also accepts these headers: "
-        "**Domain**, **Website**, **Company Website**, **URL**."
-    )
     st.markdown(
-        "**Name columns** — include either **Full Name** OR both "
-        "**First Name** and **Last Name** per row",
+        "".join(f'<span class="chip">{h}</span>' for h in chips_required),
         unsafe_allow_html=True,
     )
-    st.markdown(chips_name, unsafe_allow_html=True)
-    st.markdown("**Optional columns**", unsafe_allow_html=True)
-    st.markdown(chips_optional, unsafe_allow_html=True)
 
-    if SAMPLE_CSV.exists():
+    if is_company:
+        st.caption(
+            f"**{COMPANY_DOMAIN_DISPLAY_HEADER}** also accepts these headers: "
+            "**Company Domain Name**, **Domain**, **Company Website**, **URL**."
+        )
+    else:
+        st.caption(
+            "`Company Domain Name` also accepts these headers: "
+            "**Domain**, **Website**, **Company Website**, **URL**."
+        )
+
+    if chips_name:
+        st.markdown(
+            "**Name columns** — include either **Full Name** OR both "
+            "**First Name** and **Last Name** per row",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "".join(f'<span class="chip chip-name">{h}</span>' for h in chips_name),
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("**Optional columns**", unsafe_allow_html=True)
+    st.markdown(
+        "".join(f'<span class="chip chip-opt">{h}</span>' for h in chips_optional),
+        unsafe_allow_html=True,
+    )
+
+    sample_csv = sample_csv_for(list_type)
+    if sample_csv.exists():
         st.download_button(
-            label="Download sample CSV",
-            data=SAMPLE_CSV.read_bytes(),
-            file_name="list_enrichment_template.csv",
+            label=f"Download sample {label_for.lower()} CSV",
+            data=sample_csv.read_bytes(),
+            file_name=sample_csv.name,
             mime="text/csv",
         )
 
@@ -252,7 +309,22 @@ def _file_hash(file_bytes: bytes) -> str:
     return hashlib.md5(file_bytes).hexdigest()[:10]
 
 
-def render_next_steps(list_name: str, identifier: str, *, queued: bool) -> None:
+def _is_valid_email(s: str) -> bool:
+    return bool(_EMAIL_RE.match(s))
+
+
+def render_next_steps(
+    list_type: str, list_name: str, identifier: str, row_count: int, *, queued: bool
+) -> None:
+    fan_out_line = ""
+    if list_type == LIST_TYPE_COMPANY:
+        est_low = row_count * 5
+        est_high = row_count * 15
+        fan_out_line = (
+            f"<br><b>Expected fan-out:</b> ~{est_low:,}–{est_high:,} contacts after "
+            "ZoomInfo's Find Contacts step (varies by titles found per company)."
+        )
+
     if queued:
         first_line = (
             f"Your list <b>“{list_name}”</b> ({identifier}) is in the approval queue. "
@@ -266,7 +338,7 @@ def render_next_steps(list_name: str, identifier: str, *, queued: bool) -> None:
     st.markdown(
         f'<div class="next-steps">'
         f'<span class="eyebrow">What to expect next</span>'
-        f"{first_line}<br><br>"
+        f"{first_line}{fan_out_line}<br><br>"
         "<b>Expect 24–48 hours</b> for enrichment to finish, depending on current backlog.<br>"
         "When it's complete, <b>reach out to Kit or Marcelo</b> so they can review the "
         "enriched list and import it into HubSpot.<br><br>"
@@ -288,14 +360,17 @@ def summarize_record_types(df) -> str:
 
 
 def render_queue_submit(
+    list_type: str,
     file_bytes: bytes,
     df,
     submitted_by: str,
+    submitted_by_email: str,
     submission_list_name: str,
     filename: str,
 ) -> bool:
     """Show large-list queue submit. Returns True when row was queued this run."""
     row_count = len(df)
+    threshold = threshold_for(list_type)
     fh = _file_hash(file_bytes)
     queued_flag = f"queued_{fh}"
 
@@ -305,12 +380,16 @@ def render_queue_submit(
             f"Queued for approval (queue #{queue_id}). "
             f"Reach out to **Kit** or **Marcelo** so they can approve it."
         )
-        render_next_steps(submission_list_name, f"queue #{queue_id}", queued=True)
+        render_next_steps(
+            list_type, submission_list_name, f"queue #{queue_id}", row_count,
+            queued=True,
+        )
         return True
 
+    type_label = "company" if list_type == LIST_TYPE_COMPANY else "contact"
     st.markdown(
         f'<div class="notice">'
-        f"<b>Large list — over the {LARGE_LIST_THRESHOLD:,} row limit</b><br>"
+        f"<b>Large list — over the {threshold:,} {type_label}-row limit</b><br>"
         f"This list has <b>{row_count:,}</b> rows. Lists this big can't be sent "
         f"straight to Clay — they go into an approval queue first.<br><br>"
         f"<b>Reach out to Kit or Marcelo</b> to approve the list enrichment. "
@@ -323,7 +402,9 @@ def render_queue_submit(
     if st.button("Submit to approval queue", type="primary", use_container_width=True):
         queue_id = add_to_approval_queue(
             submitted_by=submitted_by,
+            submitted_by_email=submitted_by_email,
             list_name=submission_list_name,
+            list_type=list_type,
             row_count=row_count,
             filename=filename,
             csv_bytes=file_bytes,
@@ -362,7 +443,36 @@ def render_validation_errors(result) -> None:
     )
 
 
-def render_upload_section():
+def render_list_type_picker() -> str:
+    st.subheader("List type")
+    st.markdown(
+        '<div class="section-sub">'
+        "Choose what kind of list you're uploading. This drives the required "
+        "columns and where the data gets sent in Clay."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    list_type = st.radio(
+        "List type",
+        options=list(LIST_TYPES),
+        index=0,
+        horizontal=True,
+        label_visibility="collapsed",
+        key="list_type_choice",
+    )
+    if list_type == LIST_TYPE_COMPANY:
+        st.caption(
+            "Company list — provides target accounts only. ZoomInfo's Find "
+            "Contacts will discover contacts at each account."
+        )
+    else:
+        st.caption(
+            "Contact list — provides specific people to enrich. The standard flow."
+        )
+    return list_type
+
+
+def render_upload_section(list_type: str):
     st.subheader("Upload list")
     st.markdown(
         '<div class="section-sub">'
@@ -371,12 +481,18 @@ def render_upload_section():
         unsafe_allow_html=True,
     )
 
-    name_col, list_col = st.columns(2)
+    name_col, email_col, list_col = st.columns(3)
     with name_col:
         submitted_by = st.text_input(
             "Your name *",
             placeholder="e.g. Steve Jobs",
             help="So we know who submitted this list.",
+        ).strip()
+    with email_col:
+        submitted_by_email = st.text_input(
+            "Your email *",
+            placeholder="e.g. steve@paystand.com",
+            help="We'll attach this to the submission for follow-up.",
         ).strip()
     with list_col:
         submission_list_name = st.text_input(
@@ -388,6 +504,10 @@ def render_upload_section():
     missing_meta = []
     if not submitted_by:
         missing_meta.append("Your name")
+    if not submitted_by_email:
+        missing_meta.append("Your email")
+    elif not _is_valid_email(submitted_by_email):
+        missing_meta.append("a valid email")
     if not submission_list_name:
         missing_meta.append("List name")
 
@@ -400,12 +520,13 @@ def render_upload_section():
         "Drop your CSV here",
         type=["csv"],
         disabled=bool(missing_meta),
+        key=f"uploader_{list_type}",
     )
     if uploaded is None:
         return
 
     file_bytes = uploaded.getvalue()
-    result = validate_upload(file_bytes)
+    result = validate_upload(file_bytes, list_type=list_type)
 
     if not result.is_valid:
         render_validation_errors(result)
@@ -413,23 +534,27 @@ def render_upload_section():
 
     df = result.df
     assert df is not None
-    st.success(f"Valid CSV — **{len(df)}** rows ready.")
+    type_label = "companies" if list_type == LIST_TYPE_COMPANY else "contacts"
+    st.success(f"Valid CSV — **{len(df)}** {type_label} ready.")
     with st.expander("Preview (first 5 rows)"):
         st.dataframe(df.head(), use_container_width=True, hide_index=True)
 
-    if len(df) > LARGE_LIST_THRESHOLD:
+    threshold = threshold_for(list_type)
+    if len(df) > threshold:
         render_queue_submit(
+            list_type,
             file_bytes,
             df,
             submitted_by,
+            submitted_by_email,
             submission_list_name,
             uploaded.name,
         )
         return
 
-    webhook_set = bool(get_webhook_url())
+    webhook_set = bool(get_webhook_url(list_type))
     submit = st.button(
-        "Send to Clay",
+        f"Send to Clay ({list_type})",
         type="primary",
         disabled=not webhook_set,
         use_container_width=True,
@@ -445,26 +570,36 @@ def render_upload_section():
         sent, errors = send_rows_to_clay(
             df,
             list_id,
+            list_type=list_type,
             submitted_by=submitted_by,
+            submitted_by_email=submitted_by_email,
             submission_list_name=submission_list_name,
         )
 
     if sent == len(df):
         record_submission(
             list_id, len(df), filename, "sent",
-            list_name=submission_list_name, submitted_by=submitted_by,
+            list_name=submission_list_name,
+            submitted_by=submitted_by,
+            submitted_by_email=submitted_by_email,
+            list_type=list_type,
             record_type=record_type_summary,
         )
         st.success(
             f"**List {list_id} — “{submission_list_name}”** — all **{sent}** "
             f"rows sent to Clay for enrichment ({record_type_summary})."
         )
-        render_next_steps(submission_list_name, list_id, queued=False)
+        render_next_steps(
+            list_type, submission_list_name, list_id, len(df), queued=False,
+        )
     elif sent > 0:
         msg = "; ".join(errors[:5])
         record_submission(
             list_id, len(df), filename, "partial",
-            list_name=submission_list_name, submitted_by=submitted_by,
+            list_name=submission_list_name,
+            submitted_by=submitted_by,
+            submitted_by_email=submitted_by_email,
+            list_type=list_type,
             record_type=record_type_summary,
             error_message=msg,
         )
@@ -475,7 +610,10 @@ def render_upload_section():
         msg = "; ".join(errors[:5])
         record_submission(
             list_id, len(df), filename, "failed",
-            list_name=submission_list_name, submitted_by=submitted_by,
+            list_name=submission_list_name,
+            submitted_by=submitted_by,
+            submitted_by_email=submitted_by_email,
+            list_type=list_type,
             record_type=record_type_summary,
             error_message=msg,
         )
@@ -505,18 +643,27 @@ def render_history_section():
         df["Submitted"] = local.dt.strftime("%Y-%m-%d %I:%M %p") + " PT"
     except Exception:
         df["Submitted"] = df["created_at"].dt.strftime("%Y-%m-%d %H:%M") + " UTC"
+
+    if "list_type" not in df.columns:
+        df["list_type"] = ""
+    df["list_type"] = df["list_type"].fillna("").replace("", LIST_TYPE_CONTACTS)
+    if "submitted_by_email" not in df.columns:
+        df["submitted_by_email"] = ""
+
     display = df.rename(
         columns={
             "list_id": "List ID",
             "list_name": "List name",
+            "list_type": "List type",
             "submitted_by": "Submitted by",
+            "submitted_by_email": "Email",
             "record_type": "Record type",
             "row_count": "Rows",
             "status": "Status",
         }
     )[
-        ["List ID", "List name", "Record type", "Submitted by", "Rows",
-         "Status", "Submitted"]
+        ["List ID", "List name", "List type", "Record type", "Submitted by",
+         "Email", "Rows", "Status", "Submitted"]
     ]
 
     st.dataframe(display, use_container_width=True, hide_index=True)
@@ -546,7 +693,7 @@ def render_history_section():
 def render_admin_section() -> None:
     admin_password = os.getenv("ADMIN_PASSWORD", "").strip()
     if not admin_password:
-        return  # not configured -> hide admin entirely
+        return
 
     pending_count = len(list_pending_approvals())
     expander_label = "Admin"
@@ -599,8 +746,10 @@ def render_pending_approvals_panel() -> None:
         with st.container(border=True):
             cols = st.columns([2, 2, 1, 2])
             cols[0].markdown(f"**{item['list_name']}**")
+            list_type_label = item.get("list_type") or LIST_TYPE_CONTACTS
             cols[0].caption(
-                f"by {item['submitted_by']} · {item.get('record_type') or '—'}"
+                f"by {item['submitted_by']} · {list_type_label} · "
+                f"{item.get('record_type') or '—'}"
             )
             cols[1].markdown(f"`{item['filename']}`")
             cols[1].caption(item["submitted_at"][:19].replace("T", " ") + " UTC")
@@ -655,7 +804,8 @@ def approve_pending(queue_id: int) -> None:
         st.error("Queue item not found.")
         return
 
-    result = validate_upload(item["csv_bytes"])
+    list_type = item.get("list_type") or LIST_TYPE_CONTACTS
+    result = validate_upload(item["csv_bytes"], list_type=list_type)
     if not result.is_valid:
         st.error("Stored CSV failed re-validation. Ask the submitter to re-upload.")
         render_validation_errors(result)
@@ -665,6 +815,7 @@ def approve_pending(queue_id: int) -> None:
     assert df is not None
     list_id = next_list_id()
     record_type_summary = summarize_record_types(df) or (item.get("record_type") or "")
+    submitter_email = item.get("submitted_by_email") or ""
 
     with st.spinner(
         f"Approving and sending **{item['list_name']}** "
@@ -673,7 +824,9 @@ def approve_pending(queue_id: int) -> None:
         sent, errors = send_rows_to_clay(
             df,
             list_id,
+            list_type=list_type,
             submitted_by=item["submitted_by"],
+            submitted_by_email=submitter_email,
             submission_list_name=item["list_name"],
         )
 
@@ -685,6 +838,8 @@ def approve_pending(queue_id: int) -> None:
         status,
         list_name=item["list_name"],
         submitted_by=item["submitted_by"],
+        submitted_by_email=submitter_email,
+        list_type=list_type,
         record_type=record_type_summary,
         error_message="; ".join(errors[:5]) if errors else None,
     )
@@ -725,11 +880,12 @@ def render_clear_history_panel() -> None:
 def main():
     render_header()
     render_notice()
-    render_webhook_status()
+    list_type = render_list_type_picker()
+    render_webhook_status(list_type)
     st.divider()
-    render_format_section()
+    render_format_section(list_type)
     st.divider()
-    render_upload_section()
+    render_upload_section(list_type)
     st.divider()
     render_history_section()
 
