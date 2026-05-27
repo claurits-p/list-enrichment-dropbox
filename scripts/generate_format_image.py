@@ -121,7 +121,7 @@ def _render(list_type: str, out_path: Path) -> tuple[int, int]:
     col1_pad = 16
     col2_w = 160
     pad = 22
-    footer_h = 48
+    footer_h = 66  # extra line for owner-format tip
     rows = _build_rows(list_type)
 
     w = 540
@@ -248,6 +248,16 @@ def _render(list_type: str, out_path: Path) -> tuple[int, int]:
         f"Tip: {DOMAIN_DISPLAY_HEADER} also accepts Company Domain Name, "
         "Domain, Company Website, URL."
     )
+    if list_type == LIST_TYPE_CONTACTS:
+        owner_tip = (
+            "Owner fields must be HubSpot user emails "
+            "(e.g. claurits@paystand.com)."
+        )
+    else:
+        owner_tip = (
+            "Company Owner must be a HubSpot user email "
+            "(e.g. claurits@paystand.com)."
+        )
     draw.text(
         (table_left, fy),
         domain_tip,
@@ -256,6 +266,12 @@ def _render(list_type: str, out_path: Path) -> tuple[int, int]:
     )
     draw.text(
         (table_left, fy + 18 * SCALE),
+        owner_tip,
+        fill=COLOR_TEXT_MUTED,
+        font=footer_font,
+    )
+    draw.text(
+        (table_left, fy + 36 * SCALE),
         f"Record Type values (per row): {' | '.join(RECORD_TYPES)}",
         fill=COLOR_TEXT_MUTED,
         font=footer_font,
