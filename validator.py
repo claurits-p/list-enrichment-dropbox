@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from config import (
+    COMPANY_ALL_HEADERS,
+    CONTACT_ALL_HEADERS,
     HEADER_ALIASES,
     LIST_TYPE_COMPANY,
     LIST_TYPE_CONTACTS,
@@ -108,11 +110,66 @@ def read_csv_safely(file_bytes: bytes) -> tuple[pd.DataFrame | None, list[str]]:
     return df, []
 
 
+def _detect_list_type_mismatch(headers: list[str], list_type: str) -> str | None:
+    """If the CSV's columns clearly belong to the OTHER list type, return a hint.
+
+    The hint is rendered as HTML inside the validation error block, so light
+    inline tags (<b>, <code>) are intentional.
+    """
+    normalized = {_normalize_key(h) for h in headers}
+    canonical_lookup = {
+        _normalize_key(h): h for h in CONTACT_ALL_HEADERS + COMPANY_ALL_HEADERS
+    }
+    canonical_present: set[str] = set()
+    for n in normalized:
+        canonical = HEADER_ALIASES.get(n) or canonical_lookup.get(n)
+        if canonical:
+            canonical_present.add(canonical)
+
+    contact_signals = {"Email", "First Name", "Last Name", "Full Name", "Contact Owner"}
+    contact_offenders = canonical_present & contact_signals
+
+    if list_type == LIST_TYPE_COMPANY and contact_offenders:
+        offender_str = ", ".join(
+            f"<code>{h}</code>" for h in sorted(contact_offenders)
+        )
+        return (
+            f"<b>This looks like a Contact list, not a Company list.</b> "
+            f"Your CSV includes {offender_str}, which only belong on contact lists. "
+            f"Switch <b>List type</b> above to <b>Contacts</b> and re-upload, or "
+            f"remove these columns if you really meant a company-only list."
+        )
+
+    if list_type == LIST_TYPE_CONTACTS:
+        company_required = {"Company Domain Name", "Record Type", "Company Name"}
+        if (
+            company_required.issubset(canonical_present)
+            and not (canonical_present & contact_signals)
+        ):
+            return (
+                "<b>This looks like a Company list, not a Contact list.</b> "
+                "Your CSV has the company columns (<code>Company Domain Name</code>, "
+                "<code>Record Type</code>, <code>Company Name</code>) but no "
+                "<code>Email</code> or name columns for individual contacts. "
+                "Switch <b>List type</b> above to <b>Companies</b> and re-upload."
+            )
+
+    return None
+
+
 def normalize_columns(
     df: pd.DataFrame, list_type: str
 ) -> tuple[pd.DataFrame | None, ValidationResult]:
     """Rename to canonical headers and validate column set."""
     result = ValidationResult()
+
+    # Catch wrong-list-type early so the user gets a clear nudge before the
+    # generic "Unknown column" errors pile up.
+    mismatch_hint = _detect_list_type_mismatch(list(df.columns), list_type)
+    if mismatch_hint:
+        result.column_errors.append(mismatch_hint)
+        return None, result
+
     rename_map: dict[str, str] = {}
     seen_canonical: set[str] = set()
     unknown: list[str] = []
