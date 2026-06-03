@@ -173,12 +173,12 @@ APP_TITLE = "List Enrichment Dropbox"
 DATA_DIR = "data"
 DB_PATH = f"{DATA_DIR}/submissions.db"
 
-# Lists with more rows than this need admin approval. Company lists fan out via
-# ZI "Find Contacts", so each company row can become many contact rows — the
-# threshold for that type is set much lower.
+# Lists with more rows than this need admin approval. Note that company lists
+# fan out via ZI "Find Contacts", so each company row can become many contact
+# rows downstream — keep this in mind when approving large company lists.
 LARGE_LIST_THRESHOLDS = {
     LIST_TYPE_CONTACTS: 1000,
-    LIST_TYPE_COMPANY: 100,
+    LIST_TYPE_COMPANY: 1000,
 }
 
 LARGE_LIST_THRESHOLD = LARGE_LIST_THRESHOLDS[LIST_TYPE_CONTACTS]  # legacy

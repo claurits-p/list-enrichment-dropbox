@@ -206,6 +206,15 @@ def render_header():
 def render_notice():
     contact_threshold = threshold_for(LIST_TYPE_CONTACTS)
     company_threshold = threshold_for(LIST_TYPE_COMPANY)
+    if contact_threshold == company_threshold:
+        threshold_sentence = (
+            f"<b>Lists over {contact_threshold:,} rows need admin approval.</b> "
+        )
+    else:
+        threshold_sentence = (
+            f"<b>Contact lists over {contact_threshold:,} rows and company lists "
+            f"over {company_threshold:,} rows need admin approval.</b> "
+        )
     st.markdown(
         '<div class="notice">'
         "<b>Heads up before you upload:</b><br>"
@@ -214,11 +223,9 @@ def render_notice():
         "deduped, or removed if they don't meet our criteria. "
         "<b>Ownership won't always land with you.</b> Existing contact or company owners "
         "in HubSpot won't be overwritten, so some records will stay with their current owner.<br>"
-        f"<b>Contact lists over {contact_threshold:,} rows and company lists over "
-        f"{company_threshold:,} rows need admin approval.</b> Company lists fan out via "
-        "ZoomInfo's Find Contacts, so each company can become many contacts — that's why "
-        "the threshold is lower. Larger lists go into the approval queue and Kit or "
-        "Marcelo will release them. Thanks for understanding!"
+        f"{threshold_sentence}"
+        "Larger lists go into the approval queue and Kit or Marcelo will release them. "
+        "Thanks for understanding!"
         "</div>",
         unsafe_allow_html=True,
     )
